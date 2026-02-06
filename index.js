@@ -20,6 +20,7 @@
 
     const defaultSettings = {
         enabled: true,
+        paused: false,
         source: 'default',
         preset: '',
         url: 'http://localhost:11434',
@@ -40,6 +41,10 @@
         includeUserInput: false,
         contextDepth: 4,
         includePastEchoChambers: false,
+        includePersona: false,
+        includeCharacterDescription: false,
+        includeSummary: false,
+        includeWorldInfo: false,
         livestream: false,
         livestreamBatchSize: 20,
         livestreamMode: 'manual',
@@ -59,11 +64,17 @@
     let eventsBound = false;  // Prevent duplicate event listener registration
     let userCancelled = false; // Track user-initiated cancellations
     let isLoadingChat = false; // Track when we're loading/switching chats to prevent auto-generation
+    let isGenerating = false; // Track when generation is in progress to prevent concurrent requests
 
     // Livestream state
     let livestreamQueue = []; // Queue of messages to display
     let livestreamTimer = null; // Timer for displaying next message
     let livestreamActive = false; // Whether livestream is currently displaying messages
+
+    // Pop-out window state
+    let popoutWindow = null; // Reference to pop-out window
+    let popoutDiscordBar = null; // Reference to panel in pop-out window
+    let popoutDiscordContent = null; // Reference to content in pop-out window
 
     // Simple debounce
     function debounce(func, wait) {
@@ -85,6 +96,64 @@
     function warn(...args) { /* console.warn(`[${EXTENSION_NAME}]`, ...args); */ }
     function error(...args) { console.error(`[${EXTENSION_NAME}]`, ...args); } // Keep errors visible
 
+    /**
+     * Extract text content from any API response format.
+     * Handles: Anthropic content arrays (extended thinking), OpenAI format,
+     * raw strings, and unknown shapes with deep extraction.
+     */
+    function extractTextFromResponse(response) {
+        if (!response) return '';
+
+        // 1. Response is already a plain string
+        if (typeof response === 'string') return response;
+
+        // 2. Response itself is an array of content blocks (e.g. extractData returned the content array directly)
+        if (Array.isArray(response)) {
+            const textParts = response
+                .filter(block => block && block.type === 'text' && typeof block.text === 'string')
+                .map(block => block.text);
+            if (textParts.length > 0) return textParts.join('\n');
+            // Fallback: maybe it's an array of strings
+            const stringParts = response.filter(item => typeof item === 'string');
+            if (stringParts.length > 0) return stringParts.join('\n');
+            return JSON.stringify(response);
+        }
+
+        // 3. response.content exists
+        if (response.content !== undefined && response.content !== null) {
+            // 3a. content is a string
+            if (typeof response.content === 'string') return response.content;
+            // 3b. content is an array of content blocks (Anthropic extended thinking format)
+            if (Array.isArray(response.content)) {
+                const textParts = response.content
+                    .filter(block => block && block.type === 'text' && typeof block.text === 'string')
+                    .map(block => block.text);
+                if (textParts.length > 0) return textParts.join('\n');
+            }
+        }
+
+        // 4. OpenAI choices format
+        if (response.choices?.[0]?.message?.content) {
+            const choiceContent = response.choices[0].message.content;
+            if (typeof choiceContent === 'string') return choiceContent;
+            if (Array.isArray(choiceContent)) {
+                const textParts = choiceContent
+                    .filter(block => block && block.type === 'text' && typeof block.text === 'string')
+                    .map(block => block.text);
+                if (textParts.length > 0) return textParts.join('\n');
+            }
+        }
+
+        // 5. Other common fields
+        if (typeof response.text === 'string') return response.text;
+        if (typeof response.message === 'string') return response.message;
+        if (response.message?.content && typeof response.message.content === 'string') return response.message.content;
+
+        // 6. Last resort - stringify
+        console.error('[EchoChamber] Could not extract text from response, stringifying:', response);
+        return JSON.stringify(response);
+    }
+
     function setDiscordText(html) {
         if (!discordContent) return;
 
@@ -102,6 +171,12 @@
         if (chatBlock.length) {
             const newScrollTop = chatBlock[0].scrollHeight - (chatBlock.outerHeight() + originalScrollBottom);
             chatBlock.scrollTop(newScrollTop);
+        }
+
+        // Sync to popout window if active
+        if (popoutWindow && !popoutWindow.closed && popoutDiscordContent) {
+            popoutDiscordContent.innerHTML = html;
+            popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' });
         }
     }
 
@@ -183,9 +258,13 @@
         if (autoGenerate) {
             // If livestream is enabled and in onMessage mode, don't use regular generation
             if (settings.livestream && settings.livestreamMode === 'onMessage') {
-                // Stop any current livestream and start a new batch
-                stopLivestream();
-                generateDebounced();
+                // Only start new batch if livestream isn't actively displaying
+                // If it's active, let it finish first
+                if (!livestreamActive) {
+                    generateDebounced();
+                } else {
+                    log('Livestream active, skipping new generation trigger');
+                }
             } else if (!settings.livestream) {
                 // Regular mode
                 generateDebounced();
@@ -245,13 +324,87 @@
     function restoreCachedCommentary() {
         const metadata = getChatMetadata();
         log('Attempting to restore cached commentary, metadata:', metadata);
-        if (metadata && metadata.generatedHtml) {
-            setDiscordText(metadata.generatedHtml);
-            log('Restored cached commentary from metadata, length:', metadata.generatedHtml.length);
-        } else {
+
+        if (!metadata) {
             setDiscordText('');
             log('No cached commentary found');
+            return;
         }
+
+        // Check if we need to resume a livestream that was interrupted
+        if (settings.livestream && metadata.fullGeneratedHtml && !metadata.livestreamComplete) {
+            // Livestream was in progress - figure out what's been shown vs what's remaining
+            const fullMessages = parseLivestreamMessages(metadata.fullGeneratedHtml);
+            const displayedHtml = metadata.generatedHtml || '';
+            const displayedMessages = displayedHtml ? parseLivestreamMessages(displayedHtml) : [];
+
+            log('Livestream restore check: full messages:', fullMessages.length, 'displayed:', displayedMessages.length);
+
+            if (fullMessages.length > displayedMessages.length) {
+                // There are remaining messages to show
+                // First, display what was already shown (if any)
+                if (displayedHtml) {
+                    setDiscordText(displayedHtml);
+                }
+
+                // Calculate remaining messages (they're at the end of fullMessages since we prepend)
+                // Messages are prepended, so displayed ones are at the start of the container
+                // We need to find which ones from fullMessages haven't been shown yet
+                const remainingCount = fullMessages.length - displayedMessages.length;
+                const remainingMessages = fullMessages.slice(0, remainingCount); // First N are the ones not yet shown
+
+                log('Resuming livestream with', remainingMessages.length, 'remaining messages');
+
+                // Resume the livestream with remaining messages
+                livestreamQueue = remainingMessages;
+                livestreamActive = true;
+
+                // Start displaying remaining messages
+                displayNextLivestreamMessage();
+                return;
+            }
+        }
+
+        // Normal restore - either not livestream mode, or livestream was complete, or no fullGeneratedHtml
+        if (metadata.generatedHtml) {
+            setDiscordText(metadata.generatedHtml);
+            log('Restored cached commentary from metadata, length:', metadata.generatedHtml.length);
+        } else if (metadata.fullGeneratedHtml) {
+            // Livestream complete but generatedHtml not set - use full
+            setDiscordText(metadata.fullGeneratedHtml);
+            log('Restored from fullGeneratedHtml, length:', metadata.fullGeneratedHtml.length);
+        } else {
+            setDiscordText('');
+            log('No commentary to restore');
+        }
+    }
+
+    function getActiveCharacters(includeDisabled = false) {
+        const context = SillyTavern.getContext();
+
+        // Check if we're in a group chat
+        if (context.groupId && context.groups) {
+            const group = context.groups.find(g => g.id === context.groupId);
+            if (group && group.members) {
+                const characters = group.members
+                    .map(memberId => context.characters.find(c => c.avatar === memberId))
+                    .filter(char => char !== undefined);
+
+                if (includeDisabled) {
+                    return characters;
+                }
+
+                // Filter out disabled characters
+                return characters.filter(char => !group.disabled_members?.includes(char.avatar));
+            }
+        }
+
+        // Single character chat - return character at current index
+        if (context.characterId !== undefined && context.characters[context.characterId]) {
+            return [context.characters[context.characterId]];
+        }
+
+        return [];
     }
 
     // ============================================================
@@ -259,6 +412,9 @@
     // ============================================================
 
     function stopLivestream() {
+        if (livestreamTimer || livestreamQueue.length > 0) {
+            console.warn(`[EchoChamber] stopLivestream called! Queue had ${livestreamQueue.length} messages remaining. Caller:`, new Error().stack?.split('\n')[2]?.trim());
+        }
         if (livestreamTimer) {
             clearTimeout(livestreamTimer);
             livestreamTimer = null;
@@ -288,7 +444,15 @@
     function displayNextLivestreamMessage() {
         if (livestreamQueue.length === 0) {
             livestreamActive = false;
+            console.warn('[EchoChamber] Livestream completed - all messages displayed');
             log('Livestream completed');
+
+            // Mark livestream as complete in metadata
+            const metadata = getChatMetadata();
+            if (metadata) {
+                metadata.livestreamComplete = true;
+                saveChatMetadata(metadata);
+            }
 
             // If in onComplete mode, trigger next batch generation
             if (settings.livestream && settings.livestreamMode === 'onComplete') {
@@ -298,16 +462,82 @@
             return;
         }
 
-        const message = livestreamQueue.shift();
+        try {
+            const message = livestreamQueue.shift();
+            console.warn(`[EchoChamber] Displaying livestream message. Remaining in queue: ${livestreamQueue.length}`);
 
-        // Get current content
-        const currentContent = discordContent ? discordContent.html() : '';
+            // Get or create the container
+            let container = discordContent ? discordContent.find('.discord_container') : null;
 
-        // Prepend new message with animation class
-        const messageHtml = `<div class="ec_livestream_message">${message}</div>`;
-        const newContent = messageHtml + currentContent;
+            if (!container || !container.length) {
+                // No container exists - create one with current content
+                const currentContent = discordContent ? discordContent.html() : '';
+                discordContent.html(`<div class="discord_container" style="padding-top: 10px;">${currentContent}</div>`);
+                container = discordContent.find('.discord_container');
+            }
 
-        setDiscordText(newContent);
+            // Remove animation class from existing messages first
+            container.find('.ec_livestream_message').removeClass('ec_livestream_message');
+
+            // Create and prepend new message
+            const tempWrapper = jQuery('<div class="ec_livestream_message"></div>').append(jQuery(message));
+            container.prepend(tempWrapper);
+
+            // Scroll to top of the EchoChamber panel to show new message
+            if (discordContent[0]) {
+                discordContent[0].scrollTo({ top: 0, behavior: 'smooth' });
+            }
+
+            // Sync to popout window if active
+            if (popoutWindow && !popoutWindow.closed && popoutDiscordContent) {
+                try {
+                    let popoutContainer = popoutDiscordContent.querySelector('.discord_container');
+                    if (!popoutContainer) {
+                        // Create container in popout too
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'discord_container';
+                        wrapper.style.paddingTop = '10px';
+                        wrapper.innerHTML = popoutDiscordContent.innerHTML;
+                        popoutDiscordContent.innerHTML = '';
+                        popoutDiscordContent.appendChild(wrapper);
+                        popoutContainer = wrapper;
+                    }
+
+                    // Remove animation class from popout messages
+                    popoutContainer.querySelectorAll('.ec_livestream_message').forEach(el => {
+                        el.classList.remove('ec_livestream_message');
+                    });
+
+                    // Create clone for popout
+                    const popoutWrapper = document.createElement('div');
+                    popoutWrapper.className = 'ec_livestream_message';
+                    popoutWrapper.innerHTML = message;
+                    popoutContainer.insertBefore(popoutWrapper, popoutContainer.firstChild);
+
+                    popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch (popoutErr) {
+                    // Ignore popout errors, don't let them break the livestream
+                    log('Popout sync error (ignored):', popoutErr);
+                }
+            }
+
+            // Update saved HTML with current displayed state (don't let this break livestream)
+            try {
+                const currentDisplayedHtml = discordContent.html();
+                const metadata = getChatMetadata();
+                if (metadata) {
+                    metadata.generatedHtml = currentDisplayedHtml;
+                    // Keep fullGeneratedHtml and livestreamComplete status
+                    saveChatMetadata(metadata);
+                }
+            } catch (metaErr) {
+                log('Metadata save error (ignored):', metaErr);
+            }
+
+        } catch (err) {
+            error('Error displaying livestream message:', err);
+            // Continue to next message even if this one failed
+        }
 
         // Schedule next message with random delay between user-configured min/max seconds
         const minWait = (settings.livestreamMinWait || 5) * 1000;
@@ -336,18 +566,275 @@
     }
 
     // ============================================================
+    // POP-OUT WINDOW FUNCTIONS
+    // ============================================================
+
+    function openPopoutWindow() {
+        // Check if window is already open
+        if (popoutWindow && !popoutWindow.closed) {
+            popoutWindow.focus();
+            return;
+        }
+
+        // Get current content
+        const currentContent = discordContent ? discordContent.html() : '';
+
+        // Create popup window
+        const width = 450;
+        const height = 700;
+        const left = window.screenX + window.outerWidth; // Position to the right of main window
+        const top = window.screenY;
+
+        popoutWindow = window.open('', 'EchoChamber_Popout',
+            `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+
+        if (!popoutWindow) {
+            alert('Pop-up blocked! Please allow pop-ups for this site to use the pop-out feature.');
+            return;
+        }
+
+        // Build the popup HTML
+        popoutWindow.document.write(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>EchoChamber - Pop Out</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .popout-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .popout-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+        }
+        .popout-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .popout-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+        .popout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .style-select {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .style-select option {
+            background: #2a2a4e;
+            color: white;
+        }
+        .popout-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: #16213e;
+        }
+        /* Discord-style message styling */
+        .discord_container { display: flex; flex-direction: column; gap: 8px; }
+        .discord_message {
+            display: flex;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.03);
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .discord_avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            color: white;
+        }
+        .discord_content { flex: 1; min-width: 0; }
+        .discord_header { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+        .discord_username { font-weight: 600; color: #7289da; font-size: 14px; }
+        .discord_timestamp { font-size: 11px; color: #72767d; }
+        .discord_text { font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+        .ec_livestream_message {
+            animation: slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="popout-header">
+        <span class="popout-title">🗣️ EchoChamber</span>
+        <div class="popout-controls">
+            <select class="style-select" id="popout-style-select">
+                <option value="">Loading styles...</option>
+            </select>
+            <button class="popout-btn" id="dock-btn" title="Return to SillyTavern">📌 Dock to ST</button>
+        </div>
+    </div>
+    <div class="popout-content" id="popout-discord-content">
+        ${currentContent}
+    </div>
+</body>
+</html>
+        `);
+        popoutWindow.document.close();
+
+        // Get references to popout elements
+        popoutDiscordContent = popoutWindow.document.getElementById('popout-discord-content');
+
+        // Setup dock button
+        const dockBtn = popoutWindow.document.getElementById('dock-btn');
+        dockBtn.addEventListener('click', () => {
+            closePopoutWindow();
+        });
+
+        // Setup style selector
+        const styleSelect = popoutWindow.document.getElementById('popout-style-select');
+        populatePopoutStyleSelector(styleSelect);
+
+        // Handle window close
+        popoutWindow.addEventListener('beforeunload', () => {
+            popoutWindow = null;
+            popoutDiscordBar = null;
+            popoutDiscordContent = null;
+        });
+
+        log('Popout window opened');
+    }
+
+    function closePopoutWindow() {
+        if (popoutWindow && !popoutWindow.closed) {
+            popoutWindow.close();
+        }
+        popoutWindow = null;
+        popoutDiscordBar = null;
+        popoutDiscordContent = null;
+        log('Popout window closed');
+    }
+
+    async function populatePopoutStyleSelector(selectElement) {
+        if (!selectElement) return;
+
+        // Get built-in styles
+        const builtInStyles = [
+            { value: 'twitch', label: '🎮 Discord/Twitch' },
+            { value: 'twitter', label: '🐦 Twitter/X' },
+            { value: 'ao3_wattpad', label: '📚 AO3/Wattpad' },
+            { value: 'breaking_news', label: '📺 Breaking News' },
+            { value: 'mst3k', label: '🎬 MST3K' },
+            { value: 'nsfw_ava', label: '💋 NSFW Ava' },
+            { value: 'nsfw_kai', label: '🔥 NSFW Kai' },
+            { value: 'hypebot', label: '🤖 HypeBot' },
+            { value: 'thoughtful', label: '🤔 Thoughtful' },
+            { value: 'dumb_and_dumber', label: '🤪 Dumb & Dumber' },
+            { value: 'doomscrollers', label: '😰 Doomscrollers' }
+        ];
+
+        // Clear and populate
+        selectElement.innerHTML = '';
+
+        // Add built-in styles
+        builtInStyles.forEach(style => {
+            const option = document.createElement('option');
+            option.value = style.value;
+            option.textContent = style.label;
+            if (style.value === settings.style) option.selected = true;
+            selectElement.appendChild(option);
+        });
+
+        // Add custom styles if any
+        if (settings.custom_styles && Object.keys(settings.custom_styles).length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = '✨ Custom Styles';
+            Object.keys(settings.custom_styles).forEach(styleName => {
+                const option = document.createElement('option');
+                option.value = styleName;
+                option.textContent = styleName;
+                if (styleName === settings.style) option.selected = true;
+                optgroup.appendChild(option);
+            });
+            selectElement.appendChild(optgroup);
+        }
+
+        // Handle style change from popout
+        selectElement.addEventListener('change', (e) => {
+            const newStyle = e.target.value;
+            settings.style = newStyle;
+
+            // Update main window selector if exists
+            const mainSelector = document.querySelector('#discord_style_select');
+            if (mainSelector) mainSelector.value = newStyle;
+
+            // Update quick bar selector if exists
+            const quickSelector = document.querySelector('.ec_quick_bar select');
+            if (quickSelector) quickSelector.value = newStyle;
+
+            // Save settings
+            SillyTavern.getContext().saveSettingsDebounced();
+
+            log('Style changed from popout to:', newStyle);
+        });
+    }
+
+    // ============================================================
     // GENERATION FUNCTIONS
     // ============================================================
 
-    function saveGeneratedCommentary(html, messageCommentaries) {
+    function saveGeneratedCommentary(html, messageCommentaries, fullHtml = null, livestreamComplete = true) {
         const chatId = SillyTavern.getContext().chatId;
         log('Saving generated commentary for chatId:', chatId, 'html length:', html?.length);
-        saveChatMetadata({
+        const metadata = {
             generatedHtml: html,
             messageCommentaries: messageCommentaries || {},
-            timestamp: Date.now()
-        });
-        log('Saved generated commentary to metadata');
+            timestamp: Date.now(),
+            livestreamComplete: livestreamComplete
+        };
+        // Save fullGeneratedHtml for livestream resume capability
+        if (fullHtml) {
+            metadata.fullGeneratedHtml = fullHtml;
+        }
+        saveChatMetadata(metadata);
+        log('Saved generated commentary to metadata, livestreamComplete:', livestreamComplete);
     }
 
     // ============================================================
@@ -360,11 +847,26 @@
             return;
         }
 
+        // If paused, don't generate but keep panel visible
+        if (settings.paused) {
+            return;
+        }
+
+        // If already generating, abort the previous request first
+        if (isGenerating && abortController) {
+            abortController.abort();
+            // Wait a tiny bit for the abort to process
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
         if (discordBar) discordBar.show();
 
         const context = SillyTavern.getContext();
         const chat = context.chat;
         if (!chat || chat.length === 0) return;
+
+        // Mark generation as in progress
+        isGenerating = true;
 
         // Create new AbortController BEFORE setting up the Cancel button
         userCancelled = false;
@@ -432,7 +934,8 @@
         let historyMessages;
 
         if (settings.includeUserInput) {
-            const depth = Math.max(2, Math.min(20, settings.contextDepth || 4));
+            // Allow context depth up to 500 messages (no artificial cap)
+            const depth = Math.max(2, Math.min(500, settings.contextDepth || 4));
             // Filter out hidden messages first
             const visibleChat = chat.filter(msg => !msg.is_system);
 
@@ -468,45 +971,8 @@
         // Build history with past commentary if enabled
         const metadata = getChatMetadata();
         const messageCommentaries = (metadata && metadata.messageCommentaries) || {};
-        let history = '';
 
-        // Maximum history size in characters (~2000 tokens to stay safe within context limits)
-        const MAX_HISTORY_CHARS = 8000;
-
-        if (settings.includePastEchoChambers && metadata && metadata.messageCommentaries) {
-            // Include past generated commentary
-            for (let i = 0; i < historyMessages.length; i++) {
-                const msg = historyMessages[i];
-                const msgIndex = chat.indexOf(msg);
-                history += `<message="${msgIndex}">\n${msg.name}: ${cleanMessage(msg.mes)}\n</message="${msgIndex}">\n`;
-
-                // Add commentary if it exists for this message
-                if (messageCommentaries[msgIndex]) {
-                    history += `<commentary="${msgIndex}">\n${messageCommentaries[msgIndex]}\n</commentary="${msgIndex}">\n`;
-                }
-                if (i < historyMessages.length - 1) history += '\n';
-            }
-            log('Including past EchoChambers commentary');
-        } else {
-            // Just messages without past commentary
-            history = historyMessages.map(msg => `${msg.name}: ${cleanMessage(msg.mes)}`).join('\n');
-        }
-
-        // Trim history if it exceeds maximum size to prevent context overflow
-        if (history.length > MAX_HISTORY_CHARS) {
-            log(`History too long (${history.length} chars), trimming to ${MAX_HISTORY_CHARS} chars`);
-            // Trim from the beginning (oldest content) and add a note
-            const trimmedHistory = history.slice(-MAX_HISTORY_CHARS);
-            // Find the first complete line after trimming
-            const firstNewline = trimmedHistory.indexOf('\n');
-            if (firstNewline > 0 && firstNewline < 200) {
-                history = '[...earlier context trimmed...]\n' + trimmedHistory.slice(firstNewline + 1);
-            } else {
-                history = '[...earlier context trimmed...]\n' + trimmedHistory;
-            }
-        }
-
-        log('History messages:', historyMessages.map(m => ({ name: m.name, is_user: m.is_user })), 'final length:', history.length);
+        log('History messages:', historyMessages.map(m => ({ name: m.name, is_user: m.is_user })), 'count:', historyMessages.length);
 
         // Determine user count and message count
         const isNarratorStyle = ['nsfw_ava', 'nsfw_kai', 'hypebot'].includes(settings.style);
@@ -530,10 +996,101 @@
 
         const stylePrompt = await loadChatStyle(settings.style || 'twitch');
 
-        // Simple system message
-        const systemMessage = 'You are an excellent creator of fake chat feeds that react dynamically to the user\'s conversation context.';
+        // Build additional context for system message (persona, characters, summary, world info)
+        let additionalSystemContext = '';
+        const systemContextParts = [];
 
-        // Build dynamic prefix based on style type and mode
+        // Include persona if enabled - use {{persona}} macro which ST substitutes automatically
+        if (settings.includePersona) {
+            const personaName = context.name1 || 'User';
+            // Use the {{persona}} macro - generateRaw will substitute it with actual persona description
+            systemContextParts.push(`<user_persona name="${personaName}">\n{{persona}}\n</user_persona>`);
+            log('Added persona macro to system message');
+        }
+
+        // Include character descriptions if enabled
+        if (settings.includeCharacterDescription) {
+            const activeCharacters = getActiveCharacters();
+            if (activeCharacters.length > 0) {
+                const charDescriptions = activeCharacters
+                    .filter(char => char.description)
+                    .map(char => `<character name="${char.name}">\n${char.description}\n</character>`)
+                    .join('\n\n');
+                if (charDescriptions) {
+                    systemContextParts.push(charDescriptions);
+                    log('Added character descriptions for', activeCharacters.length, 'characters');
+                }
+            }
+        }
+
+        // Include summary if enabled (from Summarize extension)
+        if (settings.includeSummary) {
+            try {
+                // Try to get summary from chat metadata or extension settings
+                const memorySettings = context.extensionSettings?.memory;
+                if (memorySettings) {
+                    // Look for summary in recent chat messages
+                    const chatWithSummary = context.chat?.slice().reverse().find(m => m.extra?.memory);
+                    if (chatWithSummary?.extra?.memory) {
+                        systemContextParts.push(`<summary>\n${chatWithSummary.extra.memory}\n</summary>`);
+                        log('Added summary from chat memory');
+                    }
+                }
+            } catch (e) {
+                log('Could not get summary:', e);
+            }
+        }
+
+        // Include world info (lorebook) if enabled - fetch using getWorldInfoPrompt like RPG Companion
+        if (settings.includeWorldInfo) {
+            try {
+                // Use SillyTavern's getWorldInfoPrompt to get activated lorebook entries
+                const getWorldInfoFn = context.getWorldInfoPrompt || (typeof window !== 'undefined' && window.getWorldInfoPrompt);
+                const currentChat = context.chat || chat;
+
+                if (typeof getWorldInfoFn === 'function' && currentChat && currentChat.length > 0) {
+                    const chatForWI = currentChat.map(x => x.mes || x.message || x).filter(m => m && typeof m === 'string');
+                    const result = await getWorldInfoFn(chatForWI, 8000, false);
+                    const worldInfoString = result?.worldInfoString || result;
+
+                    if (worldInfoString && typeof worldInfoString === 'string' && worldInfoString.trim()) {
+                        systemContextParts.push(`<world_info>\n${worldInfoString.trim()}\n</world_info>`);
+                        log('Added world info, length:', worldInfoString.length);
+                    } else {
+                        log('World info enabled but getWorldInfoPrompt returned empty');
+                    }
+                } else {
+                    // Fallback to activatedWorldInfo
+                    if (context.activatedWorldInfo && Array.isArray(context.activatedWorldInfo) && context.activatedWorldInfo.length > 0) {
+                        const worldInfoContent = context.activatedWorldInfo
+                            .filter(entry => entry && entry.content)
+                            .map(entry => entry.content)
+                            .join('\n\n');
+                        if (worldInfoContent.trim()) {
+                            systemContextParts.push(`<world_info>\n${worldInfoContent.trim()}\n</world_info>`);
+                            log('Added world info from activatedWorldInfo, entries:', context.activatedWorldInfo.length);
+                        }
+                    } else {
+                        log('World info enabled but no getWorldInfoPrompt function and no activatedWorldInfo');
+                    }
+                }
+            } catch (e) {
+                log('Error getting world info:', e);
+            }
+        }
+
+        if (systemContextParts.length > 0) {
+            additionalSystemContext = '\n\n<lore>\n' + systemContextParts.join('\n\n') + '\n</lore>';
+        }
+
+        // Build the system message with base prompt and additional context
+        const systemMessage = `<role>
+You are an excellent creator of fake chat feeds that react dynamically to the user's conversation context.
+</role>${additionalSystemContext}
+
+<chat_history>`;
+
+        // Build dynamic count instruction based on style type and mode
         let countInstruction = '';
         if (!isNarratorStyle) {
             if (settings.livestream) {
@@ -543,19 +1100,46 @@
             }
         }
 
-        const truePrompt = `<story_context>
-${history}
-</story_context>
+        // Build the chat history as proper message array for APIs that support it
+        // This creates user/assistant turns from the conversation
+        const chatHistoryMessages = [];
 
-<instructions>
+        if (settings.includePastEchoChambers && metadata && metadata.messageCommentaries) {
+            // Include past generated commentary interleaved with messages
+            for (let i = 0; i < historyMessages.length; i++) {
+                const msg = historyMessages[i];
+                const msgIndex = chat.indexOf(msg);
+                const role = msg.is_user ? 'user' : 'assistant';
+                let content = cleanMessage(msg.mes);
+
+                // Add commentary if it exists for this message
+                if (messageCommentaries[msgIndex]) {
+                    content += `\n\n[Previous EchoChamber commentary: ${messageCommentaries[msgIndex]}]`;
+                }
+
+                chatHistoryMessages.push({ role, content });
+            }
+            log('Including past EchoChambers commentary in chat history');
+        } else {
+            // Build chat history with proper user/assistant roles (no names, just message content)
+            for (const msg of historyMessages) {
+                const role = msg.is_user ? 'user' : 'assistant';
+                const content = cleanMessage(msg.mes);
+                chatHistoryMessages.push({ role, content });
+            }
+        }
+
+        // Build the final user prompt (instructions only, context is in chat history)
+        const instructionsPrompt = `</chat_history>
+
+        <instructions>
 ${countInstruction}${stylePrompt}
 </instructions>
 
-How do you react to the story context above?
-
-Think about it first.
-
-STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : settings.livestream ? `Output exactly ${messageCount} messages from ${actualUserCount} users.` : `Output exactly ${userCount} messages.`} Do NOT continue the story or roleplay as the characters. The created by you people are allowed to interact with each other over your generated feed. Do NOT output preamble like "Here are the messages". Just output the content directly.`;
+<task>
+Based on the chat history above, generate fake chat feed reactions. Remember to think about them step-by-step first.
+STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : settings.livestream ? `Output exactly ${messageCount} messages from ${actualUserCount} users.` : `Output exactly ${userCount} messages.`} Do NOT continue the story or roleplay as the characters. The created by you people are allowed to interact with each other over your generated feed. Do NOT output preamble like "Here are the messages". Just output the content directly.
+</task>`;
 
         // Calculate appropriate max_tokens based on message count
         // Each message typically needs 50-100 tokens, so we allocate ~200 per message with a minimum of 2048 for safety
@@ -566,7 +1150,7 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
             let result = '';
 
             if (settings.source === 'profile' && settings.preset) {
-                // PROFILE GENERATION
+                // PROFILE GENERATION - Build proper message array with chat history
                 const cm = context.extensionSettings?.connectionManager;
                 const profile = cm?.profiles?.find(p => p.name === settings.preset);
                 if (!profile) throw new Error(`Profile '${settings.preset}' not found`);
@@ -574,12 +1158,20 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 // Use ConnectionManagerRequestService
                 if (!context.ConnectionManagerRequestService) throw new Error('ConnectionManagerRequestService not available');
 
+                // Build message array: system, chat history, then instructions
                 const messages = [
-                    { role: 'system', content: systemMessage },
-                    { role: 'user', content: truePrompt }
+                    { role: 'system', content: systemMessage }
                 ];
 
-                log(`Generating with profile: ${profile.name}, max_tokens: ${calculatedMaxTokens}`);
+                // Add chat history as proper user/assistant turns
+                for (const histMsg of chatHistoryMessages) {
+                    messages.push({ role: histMsg.role, content: histMsg.content });
+                }
+
+                // Add final instruction as user message
+                messages.push({ role: 'user', content: instructionsPrompt });
+
+                log(`Generating with profile: ${profile.name}, max_tokens: ${calculatedMaxTokens}, messages: ${messages.length}`);
                 const response = await context.ConnectionManagerRequestService.sendRequest(
                     profile.id,
                     messages,
@@ -593,11 +1185,19 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                     }
                 );
 
-                // Parse response
-                if (response?.content) result = response.content;
-                else if (typeof response === 'string') result = response;
-                else if (response?.choices?.[0]?.message?.content) result = response.choices[0].message.content;
-                else result = JSON.stringify(response);
+                // DEBUG: Log the actual response shape from sendRequest
+                console.error('[EchoChamber DEBUG] sendRequest response type:', typeof response);
+                console.error('[EchoChamber DEBUG] isArray:', Array.isArray(response));
+                console.error('[EchoChamber DEBUG] response keys:', response ? Object.keys(response) : 'null/undefined');
+                if (response?.content) {
+                    console.error('[EchoChamber DEBUG] content type:', typeof response.content, 'isArray:', Array.isArray(response.content));
+                    if (Array.isArray(response.content)) {
+                        console.error('[EchoChamber DEBUG] content blocks:', response.content.map(b => ({ type: b.type, hasText: !!b.text, textLen: b.text?.length })));
+                    }
+                }
+
+                // Parse response - handle all possible formats from different API backends
+                result = extractTextFromResponse(response);
 
             } else if (settings.source === 'ollama') {
                 const baseUrl = settings.url.replace(/\/$/, '');
@@ -606,34 +1206,63 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                     warn('No Ollama model selected');
                     return;
                 }
-                const response = await fetch(`${baseUrl}/api/generate`, {
+
+                // Build message array for Ollama chat endpoint (multi-turn)
+                const messages = [
+                    { role: 'system', content: systemMessage }
+                ];
+
+                // Add chat history as proper user/assistant turns
+                for (const histMsg of chatHistoryMessages) {
+                    messages.push({ role: histMsg.role, content: histMsg.content });
+                }
+
+                // Add final instruction as user message
+                messages.push({ role: 'user', content: instructionsPrompt });
+
+                log(`Generating with Ollama: ${modelToUse}, messages: ${messages.length}`);
+
+                // Use Ollama's chat endpoint for proper multi-turn conversation
+                const response = await fetch(`${baseUrl}/api/chat`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         model: modelToUse,
-                        system: systemMessage,
-                        prompt: truePrompt,
+                        messages: messages,
                         stream: false,
-                        options: { num_ctx: context.main?.context_size || 4096, num_predict: calculatedMaxTokens, stop: ["</discordchat>"] }
+                        options: { num_ctx: context.main?.context_size || 4096, num_predict: calculatedMaxTokens }
                     }),
                     signal: abortController.signal
                 });
                 if (!response.ok) throw new Error(`Ollama API Error(${response.status})`);
                 const data = await response.json();
-                result = data.response;
+                result = data.message?.content || data.response || '';
             } else if (settings.source === 'openai') {
                 const baseUrl = settings.openai_url.replace(/\/$/, '');
                 const targetEndpoint = `${baseUrl}/chat/completions`;
 
+                // Build message array: system, chat history, then instructions
+                const messages = [
+                    { role: 'system', content: systemMessage }
+                ];
+
+                // Add chat history as proper user/assistant turns
+                for (const histMsg of chatHistoryMessages) {
+                    messages.push({ role: histMsg.role, content: histMsg.content });
+                }
+
+                // Add final instruction as user message
+                messages.push({ role: 'user', content: instructionsPrompt });
+
                 const payload = {
                     model: settings.openai_model || 'local-model',
-                    messages: [
-                        { role: 'system', content: systemMessage },
-                        { role: 'user', content: truePrompt }
-                    ],
-                    temperature: 0.7, max_tokens: calculatedMaxTokens, stream: false
+                    messages: messages,
+                    temperature: 0.7,
+                    max_tokens: calculatedMaxTokens,
+                    stream: false
                 };
 
+                log(`Generating with OpenAI compatible: ${settings.openai_model}, messages: ${messages.length}`);
                 const response = await fetch(targetEndpoint, {
                     method: 'POST',
                     headers: {
@@ -645,12 +1274,76 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 });
                 if (!response.ok) throw new Error(`API Error: ${response.status}`);
                 const data = await response.json();
-                result = data.choices[0].message.content;
+                result = extractTextFromResponse(data);
             } else {
-                // Default ST generation using context
+                // Default ST generation using context - build message array like RPG Companion
                 const { generateRaw } = context;
                 if (generateRaw) {
-                    result = await generateRaw({ systemPrompt: systemMessage, prompt: truePrompt, streaming: false });
+                    // Build message array: system, chat history, then instructions
+                    const messages = [
+                        { role: 'system', content: systemMessage }
+                    ];
+
+                    // Add chat history as proper user/assistant turns
+                    for (const histMsg of chatHistoryMessages) {
+                        messages.push({ role: histMsg.role, content: histMsg.content });
+                    }
+
+                    // Add final instruction as user message
+                    messages.push({ role: 'user', content: instructionsPrompt });
+
+                    log(`Generating with ST generateRaw, messages: ${messages.length}`);
+
+                    // Temporarily intercept fetch to capture the raw API response.
+                    // This is needed because SillyTavern's generateRaw uses extractMessageFromData
+                    // which calls .find() to get the FIRST type:'text' block. With Claude extended
+                    // thinking, the first text block is just '\n\n' (empty), and the actual content
+                    // is in a later text block. generateRaw then throws "No message generated".
+                    // By capturing the raw response, we can extract the text ourselves on failure.
+                    let capturedRawData = null;
+                    const originalFetch = window.fetch;
+                    window.fetch = async function (...args) {
+                        const response = await originalFetch.apply(this, args);
+                        try {
+                            const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+                            if (url.includes('/api/backends/chat-completions/generate') ||
+                                url.includes('/api/backends/') && url.includes('/generate')) {
+                                const clone = response.clone();
+                                capturedRawData = await clone.json();
+                            }
+                        } catch (e) { /* ignore clone/parse errors */ }
+                        return response;
+                    };
+
+                    try {
+                        result = await generateRaw({ prompt: messages, quietToLoud: false });
+
+                        // generateRaw's cleanUpMessage may mangle our output or return near-empty
+                        // content when extended thinking is used (first text block is just '\n\n').
+                        // Always check if captured raw data has more content.
+                        if (capturedRawData) {
+                            const rawExtracted = extractTextFromResponse(capturedRawData);
+                            const rawTrimmed = rawExtracted?.trim() || '';
+                            const resultTrimmed = result?.trim() || '';
+                            if (rawTrimmed.length > resultTrimmed.length + 50) {
+                                console.warn('[EchoChamber] generateRaw returned truncated/mangled result (' +
+                                    resultTrimmed.length + ' chars). Using raw API data instead (' + rawTrimmed.length + ' chars).');
+                                result = rawExtracted;
+                            }
+                        }
+                    } catch (genErr) {
+                        if (genErr.message?.includes('No message generated') && capturedRawData) {
+                            console.warn('[EchoChamber] generateRaw failed to parse response (likely extended thinking format). Extracting from raw API data.');
+                            result = extractTextFromResponse(capturedRawData);
+                            if (!result || !result.trim()) {
+                                throw new Error('Could not extract text from API response');
+                            }
+                        } else {
+                            throw genErr;
+                        }
+                    } finally {
+                        window.fetch = originalFetch; // Always restore original fetch
+                    }
                 } else {
                     throw new Error('generateRaw not available in context');
                 }
@@ -661,6 +1354,13 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 log('Generation was cancelled, skipping result parsing');
                 throw new Error('Generation cancelled by user');
             }
+
+            // Safety: ensure result is a string before string operations
+            if (typeof result !== 'string') {
+                console.error('[EchoChamber] result is not a string after extraction! Type:', typeof result, 'Value:', result);
+                result = extractTextFromResponse(result) || String(result);
+            }
+            console.error('[EchoChamber DEBUG] Final result (first 200 chars):', result?.substring?.(0, 200));
 
             // Parse result - strip thinking/reasoning tags and discordchat wrapper
             let cleanResult = result
@@ -707,6 +1407,7 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 messageCount++;
             }
 
+            console.warn(`[EchoChamber] Parsed ${parsedMessages.length} messages, displayed ${messageCount}/${userCount}`);
             log(`Parsed ${parsedMessages.length} messages, displayed ${messageCount}/${userCount}`);
 
             htmlBuffer += '</div>';
@@ -719,13 +1420,16 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 if (settings.livestream) {
                     // Parse individual messages for livestream
                     const messages = parseLivestreamMessages(htmlBuffer);
+                    console.warn('[EchoChamber] Livestream mode: queuing', messages.length, 'messages for display');
                     log('Livestream mode: queuing', messages.length, 'messages');
 
-                    // Save to metadata for persistence
+                    // Save to metadata for persistence - save full html and mark as incomplete
                     const lastMsgIndex = chat.length - 1;
                     const updatedCommentaries = { ...(messageCommentaries || {}) };
                     updatedCommentaries[lastMsgIndex] = cleanResult;
-                    saveGeneratedCommentary(htmlBuffer, updatedCommentaries);
+                    // Save with fullGeneratedHtml for resume and mark livestream as not complete yet
+                    // generatedHtml starts empty since no messages displayed yet
+                    saveGeneratedCommentary('', updatedCommentaries, htmlBuffer, false);
 
                     // Start livestream display
                     startLivestream(messages);
@@ -741,7 +1445,12 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
                 }
             }
 
+            // Mark generation as complete
+            isGenerating = false;
+
         } catch (err) {
+            // Mark generation as complete (even on error)
+            isGenerating = false;
             setStatus('');
             const isAbort = err.name === 'AbortError' || err.message?.includes('aborted') || userCancelled;
             if (isAbort || userCancelled) {
@@ -858,6 +1567,10 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle ? '' : 
         jQuery('#discord_include_user').prop('checked', settings.includeUserInput);
         jQuery('#discord_context_depth').val(settings.contextDepth || 4);
         jQuery('#discord_include_past_echo').prop('checked', settings.includePastEchoChambers || false);
+        jQuery('#discord_include_persona').prop('checked', settings.includePersona || false);
+        jQuery('#discord_include_character_description').prop('checked', settings.includeCharacterDescription || false);
+        jQuery('#discord_include_summary').prop('checked', settings.includeSummary || false);
+        jQuery('#discord_include_world_info').prop('checked', settings.includeWorldInfo || false);
 
         // Livestream settings
         jQuery('#discord_livestream').prop('checked', settings.livestream || false);
@@ -1610,11 +2323,12 @@ username: message
         discordBar = jQuery('<div id="discordBar"></div>');
         discordQuickBar = jQuery('<div id="discordQuickSettings"></div>');
 
-        // Header Left - Toggle button and Live indicator
+        // Header Left - Power button (enable/disable), Collapse arrow, and Live indicator
         const leftGroup = jQuery('<div class="ec_header_left"></div>');
-        const toggleBtn = jQuery('<div class="ec_toggle_btn" title="Toggle On/Off"><i class="fa-solid fa-power-off"></i></div>');
+        const powerBtn = jQuery('<div class="ec_power_btn" title="Enable/Disable EchoChamber"><i class="fa-solid fa-power-off"></i></div>');
+        const collapseBtn = jQuery('<div class="ec_collapse_btn" title="Collapse/Expand Panel"><i class="fa-solid fa-chevron-down"></i></div>');
         const liveIndicator = jQuery('<div class="ec_live_indicator" id="ec_live_indicator"><i class="fa-solid fa-circle"></i> LIVE</div>');
-        leftGroup.append(toggleBtn).append(liveIndicator);
+        leftGroup.append(powerBtn).append(collapseBtn).append(liveIndicator);
 
         // Header Right - All icon buttons (Refresh first, then layout, users, font)
         const rightGroup = jQuery('<div class="ec_header_right"></div>');
@@ -1661,6 +2375,9 @@ username: message
             const isSelected = pos.toLowerCase() === currentPos ? ' selected' : '';
             layoutMenu.append(`<div class="ec_menu_item${isSelected}" data-val="${pos.toLowerCase()}"><i class="fa-solid fa-arrow-${icon}"></i> ${pos}</div>`);
         });
+        // Add Pop Out option
+        const popoutSelected = currentPos === 'popout' ? ' selected' : '';
+        layoutMenu.append(`<div class="ec_menu_item${popoutSelected}" data-val="popout"><i class="fa-solid fa-arrow-up-right-from-square"></i> Pop Out</div>`);
 
         // Populate User Count Menu with current selection highlighted
         const userMenu = usersBtn.find('.ec_user_menu');
@@ -1715,6 +2432,15 @@ username: message
 
     function updateApplyLayout() {
         if (!discordBar) return;
+
+        // If fully disabled (via settings checkbox), hide the panel entirely
+        if (!settings.enabled) {
+            discordBar.hide();
+            return;
+        }
+
+        // Show panel if enabled
+        discordBar.show();
 
         const pos = settings.position || 'bottom';
 
@@ -1791,27 +2517,48 @@ username: message
             discordBar.removeClass('ec_collapsed');
         }
 
-        // Hide panel completely if disabled
-        if (!settings.enabled) {
-            discordBar.hide();
+        // Add paused visual state class (panel stays visible, generation is paused)
+        if (settings.paused) {
+            discordBar.addClass('ec_disabled');
         } else {
-            discordBar.show();
+            discordBar.removeClass('ec_disabled');
         }
 
-        updateToggleIcon();
+        updatePanelIcons();
     }
 
-    function updateToggleIcon() {
+    function updatePanelIcons() {
         if (!discordBar) return;
-        const btn = discordBar.find('.ec_toggle_btn i');
-        // Icon shows collapse state, not enabled state
-        if (settings.collapsed) {
-            btn.removeClass('fa-power-off').addClass('fa-power-off');
-            discordBar.find('.ec_toggle_btn').css('color', 'rgba(255, 255, 255, 0.4)');
+
+        // Update power button - shows paused state
+        const powerBtn = discordBar.find('.ec_power_btn');
+        if (!settings.paused) {
+            powerBtn.css('color', 'var(--ec-accent)');
+            powerBtn.attr('title', 'Toggle On/Off (Currently ON)');
         } else {
-            btn.removeClass('fa-power-off').addClass('fa-power-off');
-            discordBar.find('.ec_toggle_btn').css('color', 'var(--ec-accent)');
+            powerBtn.css('color', 'rgba(255, 255, 255, 0.3)');
+            powerBtn.attr('title', 'Toggle On/Off (Currently OFF)');
         }
+
+        // Update collapse button - shows collapsed state with arrow direction
+        const collapseBtn = discordBar.find('.ec_collapse_btn i');
+        const pos = settings.position || 'bottom';
+        if (settings.collapsed) {
+            // When collapsed, arrow points toward expansion direction
+            if (pos === 'bottom') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-up');
+            else if (pos === 'top') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-down');
+            else if (pos === 'left') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-right');
+            else if (pos === 'right') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-left');
+            discordBar.find('.ec_collapse_btn').css('opacity', '0.5');
+        } else {
+            // When expanded, arrow points toward collapse direction
+            if (pos === 'bottom') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-down');
+            else if (pos === 'top') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-up');
+            else if (pos === 'left') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-left');
+            else if (pos === 'right') collapseBtn.removeClass('fa-chevron-down fa-chevron-up fa-chevron-left fa-chevron-right').addClass('fa-chevron-right');
+            discordBar.find('.ec_collapse_btn').css('opacity', '1');
+        }
+
         updateLiveIndicator();
     }
 
@@ -1906,8 +2653,29 @@ username: message
         if (eventsBound) return;
         eventsBound = true;
 
-        // QuickBar Toggle - only toggles panel collapse state
-        jQuery(document).on('click', '.ec_toggle_btn', function () {
+        // Power Button - toggles paused state (keeps panel visible, just pauses generation)
+        jQuery(document).on('click', '.ec_power_btn', function () {
+            settings.paused = !settings.paused;
+
+            if (settings.paused) {
+                // Pause: stop any ongoing generation (but keep panel visible)
+                stopLivestream();
+                if (abortController) {
+                    abortController.abort();
+                    abortController = null;
+                }
+                discordBar.addClass('ec_disabled');
+            } else {
+                // Unpause: remove disabled state
+                discordBar.removeClass('ec_disabled');
+            }
+
+            updatePanelIcons();
+            saveSettings();
+        });
+
+        // Collapse Button - only toggles panel collapse state (visual only)
+        jQuery(document).on('click', '.ec_collapse_btn', function () {
             settings.collapsed = !settings.collapsed;
 
             // Immediately apply/remove collapsed class
@@ -1917,7 +2685,7 @@ username: message
                 discordBar.removeClass('ec_collapsed');
             }
 
-            updateToggleIcon();
+            updatePanelIcons();
             saveSettings();
         });
 
@@ -1961,15 +2729,36 @@ username: message
 
             if (!wasActive) {
                 trigger.addClass('active');
-                // Position menu below the trigger
+                // Position menu - check if panel is at bottom position
                 const rect = trigger[0].getBoundingClientRect();
-                menu.css({
-                    position: 'fixed',
-                    top: rect.bottom + 'px',
-                    left: rect.left + 'px',
-                    width: rect.width + 'px',
-                    display: 'block'
-                });
+                const isBottomPosition = settings.position === 'bottom';
+                const menuHeight = menu.outerHeight() || 300; // Estimate if not visible
+
+                if (isBottomPosition) {
+                    // Open upward when panel is at bottom
+                    menu.css({
+                        position: 'fixed',
+                        bottom: (window.innerHeight - rect.top) + 'px',
+                        top: 'auto',
+                        left: rect.left + 'px',
+                        width: Math.max(rect.width, 200) + 'px',
+                        display: 'block',
+                        maxHeight: (rect.top - 20) + 'px',
+                        overflowY: 'auto'
+                    });
+                } else {
+                    // Open downward for other positions
+                    menu.css({
+                        position: 'fixed',
+                        top: rect.bottom + 'px',
+                        bottom: 'auto',
+                        left: rect.left + 'px',
+                        width: Math.max(rect.width, 200) + 'px',
+                        display: 'block',
+                        maxHeight: (window.innerHeight - rect.bottom - 20) + 'px',
+                        overflowY: 'auto'
+                    });
+                }
             } else {
                 trigger.removeClass('active');
                 menu.hide();
@@ -1998,17 +2787,21 @@ username: message
                 parent.find('.ec_menu_item').removeClass('selected');
                 jQuery(this).addClass('selected');
                 updateStyleIndicator();
-                if (settings.enabled) {
-                    const styleObj = getAllStyles().find(s => s.val === val);
-                    const styleName = styleObj ? styleObj.label : val;
-                    if (typeof toastr !== 'undefined') toastr.info(`Style: ${styleName}`);
-                    generateDebounced();
-                }
+                // Show toast notification about style change
+                const styleObj = getAllStyles().find(s => s.val === val);
+                const styleName = styleObj ? styleObj.label : val;
+                if (typeof toastr !== 'undefined') toastr.info(`Style: ${styleName}`);
             } else if (parent.hasClass('ec_layout_menu')) {
-                settings.position = val;
-                saveSettings();
-                updateApplyLayout();
-                jQuery('#discord_position').val(val);
+                if (val === 'popout') {
+                    // Open popout window
+                    openPopoutWindow();
+                    // Don't change the position setting, just close menu
+                } else {
+                    settings.position = val;
+                    saveSettings();
+                    updateApplyLayout();
+                    jQuery('#discord_position').val(val);
+                }
             } else if (parent.hasClass('ec_user_menu')) {
                 settings.userCount = parseInt(val);
                 saveSettings();
@@ -2030,11 +2823,29 @@ username: message
             jQuery('.ec_style_dropdown_trigger').removeClass('active');
         });
 
-        // Settings Panel Bindings
+        // Settings Panel Bindings - this fully enables/disables the extension (shows/hides panel)
         jQuery('#discord_enabled').on('change', function () {
             settings.enabled = jQuery(this).prop('checked');
+
+            if (!settings.enabled) {
+                // Full disable: stop generation and hide panel
+                stopLivestream();
+                if (abortController) {
+                    abortController.abort();
+                    abortController = null;
+                }
+                if (discordBar) discordBar.hide();
+            } else {
+                // Enable: remove paused state and reapply layout (which shows the panel)
+                settings.paused = false;
+                if (discordBar) {
+                    discordBar.removeClass('ec_disabled');
+                }
+                updateApplyLayout();
+            }
+
             saveSettings();
-            updateApplyLayout();
+            updatePanelIcons();
         });
 
         jQuery('#discord_style').on('change', function () {
@@ -2052,9 +2863,17 @@ username: message
         });
 
         jQuery('#discord_position').on('change', function () {
-            settings.position = jQuery(this).val();
-            saveSettings();
-            updateApplyLayout();
+            const newPosition = jQuery(this).val();
+            if (newPosition === 'popout') {
+                // Open popout window
+                openPopoutWindow();
+                // Reset to previous position (don't actually set position to 'popout')
+                jQuery(this).val(settings.position || 'bottom');
+            } else {
+                settings.position = newPosition;
+                saveSettings();
+                updateApplyLayout();
+            }
         });
 
         jQuery('#discord_user_count').on('change', function () {
@@ -2157,6 +2976,34 @@ username: message
             settings.includePastEchoChambers = jQuery(this).prop('checked');
             saveSettings();
             log('Include past EchoChambers:', settings.includePastEchoChambers);
+        });
+
+        // Include Persona toggle
+        jQuery('#discord_include_persona').on('change', function () {
+            settings.includePersona = jQuery(this).prop('checked');
+            saveSettings();
+            log('Include persona:', settings.includePersona);
+        });
+
+        // Include Character Description toggle
+        jQuery('#discord_include_character_description').on('change', function () {
+            settings.includeCharacterDescription = jQuery(this).prop('checked');
+            saveSettings();
+            log('Include character description:', settings.includeCharacterDescription);
+        });
+
+        // Include Summary toggle
+        jQuery('#discord_include_summary').on('change', function () {
+            settings.includeSummary = jQuery(this).prop('checked');
+            saveSettings();
+            log('Include summary:', settings.includeSummary);
+        });
+
+        // Include World Info toggle
+        jQuery('#discord_include_world_info').on('change', function () {
+            settings.includeWorldInfo = jQuery(this).prop('checked');
+            saveSettings();
+            log('Include world info:', settings.includeWorldInfo);
         });
 
         // Livestream toggle
@@ -2276,6 +3123,19 @@ username: message
 
                 // Don't auto-generate if we're currently loading/switching chats
                 if (isLoadingChat) return;
+
+                // Don't auto-generate if character editor is open (editing character cards)
+                const characterEditor = document.querySelector('#character_popup');
+                const isCharacterEditorOpen = characterEditor && characterEditor.style.display !== 'none' && characterEditor.offsetParent !== null;
+                if (isCharacterEditorOpen) return;
+
+                // Don't auto-generate if we're in the character creation/management area
+                const charCreatePanel = document.querySelector('#rm_ch_create_block');
+                const isCreatingCharacter = charCreatePanel && charCreatePanel.style.display !== 'none' && charCreatePanel.offsetParent !== null;
+                if (isCreatingCharacter) return;
+
+                // Don't auto-generate if there's no valid chatId (indicates we're not in an actual conversation)
+                if (!ctx.chatId) return;
 
                 // Only trigger on AI character messages, not user messages
                 const lastMessage = ctx.chat[ctx.chat.length - 1];

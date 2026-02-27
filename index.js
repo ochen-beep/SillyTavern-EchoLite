@@ -75,7 +75,8 @@
     let userCancelled = false; // Track user-initiated cancellations
     let isLoadingChat = false; // Track when we're loading/switching chats to prevent auto-generation
     let isGenerating = false; // Track when generation is in progress to prevent concurrent requests
-    let lastChatId = null; // Track the last chat ID to prevent false CHAT_CHANGED events    // Livestream state
+
+    // Livestream state
     let livestreamQueue = []; // Queue of messages to display
     let livestreamTimer = null; // Timer for displaying next message
     let livestreamActive = false; // Whether livestream is currently displaying messages
@@ -4982,43 +4983,34 @@ username: message
         // SillyTavern Events
         const context = SillyTavern.getContext();
         if (context.eventSource && context.eventTypes) {
-            // Track whether the last ST generation produced an AI (character) message.
-            // MESSAGE_RECEIVED fires per-streaming-chunk; we only use it to snapshot
-            // the last message role so GENERATION_ENDED can check it later.
-            let lastGeneratedWasAI = false;
+            // Only auto-generate on new message if autoUpdateOnMessages is enabled
             context.eventSource.on(context.eventTypes.MESSAGE_RECEIVED, () => {
-                const ctx = SillyTavern.getContext();
-                const lastMessage = ctx.chat && ctx.chat[ctx.chat.length - 1];
-                lastGeneratedWasAI = !!(lastMessage && !lastMessage.is_user);
-                console.error("[EchoChamber Debug] MESSAGE_RECEIVED fired. lastGeneratedWasAI:", lastGeneratedWasAI);
-            });
-
-            // GENERATION_ENDED fires exactly once when the LLM finishes the full response
-            // (including all streaming chunks). This is the correct trigger for EchoChamber
-            // because MESSAGE_RECEIVED fires on every streaming chunk, causing premature
-            // generation when a model pauses mid-stream (e.g. Deepseek on NanoGPT).
-            context.eventSource.on(context.eventTypes.GENERATION_ENDED, () => {
-                console.error("[EchoChamber Debug] GENERATION_ENDED fired");
                 // Don't auto-generate if there's no chat or it's empty (fresh chat)
                 const ctx = SillyTavern.getContext();
-                if (!ctx.chat || ctx.chat.length === 0) { console.error("[EchoChamber Debug] Aborted: Empty chat"); return; }
+                if (!ctx.chat || ctx.chat.length === 0) return;
 
                 // Don't auto-generate if we're currently loading/switching chats
-                if (isLoadingChat) { console.error("[EchoChamber Debug] Aborted: isLoadingChat is true"); return; }
+                if (isLoadingChat) return;
+
+                // Don't auto-generate if character editor is open (editing character cards)
+                const characterEditor = document.querySelector('#character_popup');
+                const isCharacterEditorOpen = characterEditor && characterEditor.style.display !== 'none' && characterEditor.offsetParent !== null;
+                if (isCharacterEditorOpen) return;
+
+                // Don't auto-generate if we're in the character creation/management area
+                const charCreatePanel = document.querySelector('#rm_ch_create_block');
+                const isCreatingCharacter = charCreatePanel && charCreatePanel.style.display !== 'none' && charCreatePanel.offsetParent !== null;
+                if (isCreatingCharacter) return;
 
                 // Don't auto-generate if there's no valid chatId (indicates we're not in an actual conversation)
-                if (!ctx.chatId) { console.error("[EchoChamber Debug] Aborted: No valid chatId"); return; }
+                if (!ctx.chatId) return;
 
-                // Only trigger on AI character messages, not user messages or impersonate/swipe ops
+                // Only trigger on AI character messages, not user messages
                 const lastMessage = ctx.chat[ctx.chat.length - 1];
-                if (!lastMessage || lastMessage.is_user) { console.error("[EchoChamber Debug] Aborted: Last message is user or missing"); return; }
-
-                // Confirm the last generation cycle produced an AI message (guards against
-                // GENERATION_ENDED firing after impersonate, slash commands, etc.)
-                if (!lastGeneratedWasAI) { console.error("[EchoChamber Debug] Aborted: lastGeneratedWasAI is false"); return; }
-
-                // Reset flag so a repeat GENERATION_ENDED without MESSAGE_RECEIVED doesn't re-fire
-                lastGeneratedWasAI = false;
+                if (!lastMessage || lastMessage.is_user) {
+                    // This is a user message or no message - don't auto-generate
+                    return;
+                }
 
                 // Determine if we should auto-generate
                 let shouldAutoGenerate = false;
@@ -5031,22 +5023,11 @@ username: message
                     shouldAutoGenerate = true;
                 }
 
-                console.error("[EchoChamber Debug] Calling onChatEvent. shouldAutoGenerate:", shouldAutoGenerate);
-
                 onChatEvent(false, shouldAutoGenerate);
             });
-
             // On chat change (loading a conversation), clear display and try to restore from metadata
             context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => {
-                const ctx = SillyTavern.getContext();
-                if (lastChatId === ctx.chatId) {
-                    console.error("[EchoChamber Debug] CHAT_CHANGED ignored due to matching lastChatId:", lastChatId);
-                    return; // Ignore superfluous changes
-                }
-                console.error("[EchoChamber Debug] CHAT_CHANGED setting isLoadingChat=true, lastChatId:", lastChatId, "new:", ctx.chatId);
-                lastChatId = ctx.chatId;
-
-                // Set flag to prevent GENERATION_ENDED from triggering during chat load
+                // Set flag to prevent MESSAGE_RECEIVED from triggering during chat load
                 isLoadingChat = true;
                 onChatEvent(false, false);
                 // Clear the flag after a short delay to allow legitimate new messages

@@ -960,9 +960,14 @@
     transition: background 0.15s, color 0.15s;
 }
 
-.ec_menu_item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+/* Only apply hover highlight on devices that support true hover (mouse/trackpad).
+   On touch-only devices (hover: none) this prevents items from lighting up
+   while the user scrolls through the menu. */
+@media (hover: hover) {
+    .ec_menu_item:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
 }
 
 /* Better selection highlight - subtle and readable */

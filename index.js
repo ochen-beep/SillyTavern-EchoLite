@@ -4637,8 +4637,37 @@ username: message
             jQuery('.ec_style_dropdown_trigger').removeClass('active');
         });
 
-        // Menu Item Clicks
-        jQuery(document).on('click', '.ec_menu_item', function (e) {
+        // Track touch start position to distinguish taps from scrolls in popup menus
+        let menuTouchStartY = 0;
+        let menuTouchStartX = 0;
+        jQuery(document).on('touchstart', '.ec_popup_menu', function (e) {
+            const touch = e.originalEvent.touches[0];
+            menuTouchStartY = touch.clientY;
+            menuTouchStartX = touch.clientX;
+        });
+        // Prevent scroll gestures inside a popup menu from bubbling up to .ec_btn and closing the menu
+        jQuery(document).on('touchend', '.ec_popup_menu', function (e) {
+            const touch = e.originalEvent.changedTouches[0];
+            const deltaY = Math.abs(touch.clientY - menuTouchStartY);
+            const deltaX = Math.abs(touch.clientX - menuTouchStartX);
+            if (deltaY > 10 || deltaX > 10) {
+                e.stopPropagation(); // Scroll — keep menu open
+            }
+        });
+
+        // Menu Item Clicks (touchend added for mobile support)
+        jQuery(document).on('click touchend', '.ec_menu_item', function (e) {
+            if (e.type === 'touchend') {
+                // If the finger moved more than 10px, treat as a scroll — ignore
+                const touch = e.originalEvent.changedTouches[0];
+                const deltaY = Math.abs(touch.clientY - menuTouchStartY);
+                const deltaX = Math.abs(touch.clientX - menuTouchStartX);
+                if (deltaY > 10 || deltaX > 10) {
+                    e.stopPropagation();
+                    return; // Scroll gesture — don't select
+                }
+                e.preventDefault();
+            }
             e.stopPropagation();
             const parent = jQuery(this).closest('.ec_popup_menu');
             const val = jQuery(this).data('val');

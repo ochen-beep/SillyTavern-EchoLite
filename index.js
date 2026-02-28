@@ -3559,7 +3559,7 @@ username: message
 
         // Helper: sync a settings-panel element after modal change
         function syncToPanel(panelId, value, isProp = false) {
-            const el = jQuery(`#${panelId} `);
+            const el = jQuery(`#${panelId}`);
             if (!el.length) return;
             if (isProp) el.prop('checked', value).trigger('change');
             else el.val(value).trigger('change');
@@ -3732,7 +3732,7 @@ username: message
         const mode = s.livestreamMode || 'manual';
         modal.find(`input[name = "ecm_livestream_mode"][value = "${mode}"]`).prop('checked', true);
         modal.find('#ecm_chat_enabled').prop('checked', s.chatEnabled !== false);
-        modal.find('#ecm_chat_username').val(s.chatUsername);
+        modal.find('#ecm_chat_username').val(s.chatUsername || 'Streamer (You)');
         modal.find('#ecm_chat_avatar_color').val(s.chatAvatarColor || '#3b82f6');
         modal.find('#ecm_chat_reply_count').val(s.chatReplyCount || 3);
         modal.find('#ecm_ollama_settings').toggle(s.source === 'ollama');

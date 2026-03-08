@@ -1201,11 +1201,11 @@
             return t.value;
         };
 
-        // Story context — last 2 messages, each capped at 400 chars so long passages don't overwhelm
+        // Story context — last 2 messages, each capped at 3000 chars so long passages don't overwhelm
         const storyContext = chat.filter(m => !m.is_system).slice(-2)
             .map(m => {
                 const text = cleanMsg(m.mes);
-                return `${m.name}: ${text.length > 400 ? text.substring(0, 400) + '...' : text}`;
+                return `${m.name}: ${text.length > 3000 ? text.substring(0, 3000) + '...' : text}`;
             }).join('\n');
 
         // Extract recent EchoChamber conversation from the DOM for conversational continuity.

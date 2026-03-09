@@ -380,7 +380,8 @@
                                 <i class="fa-solid fa-circle"></i> Avatar Color
                             </label>
                             <div class="ec-s-color-row">
-                                <input id="discord_chat_avatar_color" type="color" class="ec-s-color-input" value="#3b82f6">
+                                <input id="discord_chat_avatar_color" type="color" class="ec-s-color-input"
+                                    value="#3b82f6">
                                 <span class="ec-s-hint">Color of your avatar circle in the chat</span>
                             </div>
                         </div>
@@ -389,10 +390,31 @@
                             <label class="ec-s-field-label" for="discord_chat_reply_count">
                                 <i class="fa-solid fa-comments"></i> AI Replies per Comment
                             </label>
-                            <input id="discord_chat_reply_count" type="number" class="text_pole ec-s-input"
-                                min="1" max="12" value="3">
+                            <input id="discord_chat_reply_count" type="number" class="text_pole ec-s-input" min="1"
+                                max="12" value="3">
                             <div class="ec-s-hint ec-s-hint--indent">
-                                Number of AI responses after a general comment (1–12). Direct @mentions always get a single reply from that chatter.
+                                Number of AI responses after a general comment (1–12). Direct @mentions always get a
+                                single reply from that chatter.
+                            </div>
+                        </div>
+
+                        <!-- Max Tokens setting for Chat Participation -->
+                        <div class="ec-s-field-group">
+                            <label class="ec-s-toggle-row" for="discord_chat_override_tokens">
+                                <input id="discord_chat_override_tokens" type="checkbox" class="checkbox">
+                                <span class="ec-s-label-text">
+                                    <i class="fa-solid fa-coins"></i> Override Max Tokens Limit
+                                </span>
+                            </label>
+                            <div id="discord_chat_max_tokens_container" class="ec-s-sub-field" style="display:none">
+                                <label class="ec-s-field-label" for="discord_chat_max_tokens">Custom Max Tokens</label>
+                                <input id="discord_chat_max_tokens" type="number" class="text_pole ec-s-input-num"
+                                    min="10" max="8192" value="3000"
+                                    title="Max generation tokens for chat participation">
+                            </div>
+                            <div class="ec-s-hint ec-s-hint--indent">
+                                If unchecked, uses SillyTavern's default Response Length setting. Use this if your AI
+                                generates replies that are too long or too short.
                             </div>
                         </div>
 

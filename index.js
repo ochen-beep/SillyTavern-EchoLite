@@ -1096,9 +1096,29 @@
                 }
                 jQuery('#discordContent')[0].scrollTo({ top: 0, behavior: 'smooth' });
 
-                // Parse @mention and generate targeted reply
-                const atMatch = text.match(/^@([^\s]+)/);
-                await generateSingleReply(text, atMatch ? atMatch[1] : null);
+                let targetUsername = null;
+                if (text.startsWith('@')) {
+                    const activeUsernames = [];
+                    jQuery('#discordContent .discord_username').each(function () {
+                        const name = jQuery(this).text().trim();
+                        if (name && !activeUsernames.includes(name)) activeUsernames.push(name);
+                    });
+                    activeUsernames.sort((a, b) => b.length - a.length);
+                    for (const name of activeUsernames) {
+                        if (text.startsWith('@' + name)) {
+                            const nextChar = text.substring(name.length + 1, name.length + 2);
+                            if (!nextChar || /^[ ,\.\!\?:;]/.test(nextChar)) {
+                                targetUsername = name;
+                                break;
+                            }
+                        }
+                    }
+                    if (!targetUsername) {
+                        const atMatch = text.match(/^@([^ ]+)/);
+                        targetUsername = atMatch ? atMatch[1] : null;
+                    }
+                }
+                await generateSingleReply(text, targetUsername);
             };
 
             jQuery('#ec_float_reply_submit').on('click', handleFloatSubmit);
@@ -1223,7 +1243,8 @@
         const chatUsername = settings.chatUsername || 'Streamer (You)';
         const atUsername = `@${chatUsername}`;
         const replyCount = Math.max(1, Math.min(12, settings.chatReplyCount || 3));
-        const maxTok = targetUsername ? 200 : Math.max(200, replyCount * 80);
+        const baseMaxTok = targetUsername ? 200 : Math.max(200, replyCount * 80);
+        const maxTok = settings.chatOverrideTokens ? (settings.chatMaxTokens || 3000) : baseMaxTok;
 
         const systemPrompt = targetUsername
             ? `You are "${targetUsername}", a viewer in an active chatroom who was just directly addressed. Focus tightly on what "${atUsername}" just said to you — that is the primary context. Respond naturally in 1 sentence max. Use "${atUsername}" when addressing them. STRICTLY follow the provided chat style format.`
@@ -3361,6 +3382,16 @@ username: message
               <input id="ecm_chat_reply_count" type="number" class="ecm_input" min="1" max="12" value="${s.chatReplyCount || 3}" style="width:70px;">
             </div>
             <div class="ecm_hint">Number of AI responses after a general comment (1–12). Direct @mentions always get a single reply.</div>
+            
+            <label class="ecm_row ecm_toggle_row" style="margin-top: 10px;" for="ecm_chat_override_tokens">
+              <span class="ecm_label"><i class="fa-solid fa-coins ecm_icon"></i> Override Max Tokens</span>
+              <input id="ecm_chat_override_tokens" type="checkbox" class="ecm_toggle"${s.chatOverrideTokens ? ' checked' : ''}>
+            </label>
+            <div id="ecm_chat_max_tokens_container" class="ecm_subrow" style="${s.chatOverrideTokens ? '' : 'display:none;'}">
+              <label class="ecm_label" for="ecm_chat_max_tokens">Custom Max Tokens</label>
+              <input id="ecm_chat_max_tokens" type="number" class="ecm_input ecm_input_sm" min="10" max="8192" value="${s.chatMaxTokens || 3000}">
+            </div>
+            <div class="ecm_hint">If unchecked, uses SillyTavern's default Response Length setting.</div>
           </div>
         </section>
 
@@ -3691,7 +3722,22 @@ username: message
             const val = Math.max(1, Math.min(12, parseInt(jQuery(this).val()) || 3));
             settings.chatReplyCount = val;
             jQuery(this).val(val);
-            jQuery('#discord_chat_reply_count').val(val);
+            syncToPanel('discord_chat_reply_count', val);
+            saveSettings();
+        });
+        modal.on('change', '#ecm_chat_override_tokens', function () {
+            const enabled = this.checked;
+            settings.chatOverrideTokens = enabled;
+            syncToPanel('discord_chat_override_tokens', enabled, true);
+            jQuery('#ecm_chat_max_tokens_container').toggle(enabled);
+            jQuery('#discord_chat_max_tokens_container').toggle(enabled);
+            saveSettings();
+        });
+        modal.on('input change', '#ecm_chat_max_tokens', function () {
+            const val = Math.max(10, Math.min(8192, parseInt(jQuery(this).val()) || 3000));
+            settings.chatMaxTokens = val;
+            jQuery(this).val(val);
+            syncToPanel('discord_chat_max_tokens', val);
             saveSettings();
         });
     }
@@ -3746,6 +3792,9 @@ username: message
         modal.find('#ecm_chat_username').val(s.chatUsername || 'Streamer (You)');
         modal.find('#ecm_chat_avatar_color').val(s.chatAvatarColor || '#3b82f6');
         modal.find('#ecm_chat_reply_count').val(s.chatReplyCount || 3);
+        modal.find('#ecm_chat_override_tokens').prop('checked', !!s.chatOverrideTokens);
+        modal.find('#ecm_chat_max_tokens_container').toggle(!!s.chatOverrideTokens);
+        modal.find('#ecm_chat_max_tokens').val(s.chatMaxTokens || 3000);
         modal.find('#ecm_ollama_settings').toggle(s.source === 'ollama');
         modal.find('#ecm_openai_settings').toggle(s.source === 'openai');
         modal.find('#ecm_profile_settings').toggle(s.source === 'profile');
@@ -4298,9 +4347,8 @@ username: message
 
         // Handle clicking a username to tag them
         jQuery(document).on('click', '.discord_username', function () {
-            const username = jQuery(this).text();
             const input = jQuery('#ec_reply_field');
-            input.val(`@${username} `).focus();
+            input.val(`@${jQuery(this).text()} `).focus();
             // Scroll the reply input into view for convenience
             const replyContainer = document.querySelector('.ec_reply_container');
             if (replyContainer) replyContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -4348,9 +4396,28 @@ username: message
             // Scroll to top so the user sees their message and the incoming reply
             jQuery('#discordContent').scrollTop(0);
 
-            // Parse @username mention if present, then generate a targeted single reply
-            const atMatch = text.match(/^@([^\s]+)/);
-            const targetUsername = atMatch ? atMatch[1] : null;
+            let targetUsername = null;
+            if (text.startsWith('@')) {
+                const activeUsernames = [];
+                jQuery('#discordContent .discord_username').each(function () {
+                    const name = jQuery(this).text().trim();
+                    if (name && !activeUsernames.includes(name)) activeUsernames.push(name);
+                });
+                activeUsernames.sort((a, b) => b.length - a.length);
+                for (const name of activeUsernames) {
+                    if (text.startsWith('@' + name)) {
+                        const nextChar = text.substring(name.length + 1, name.length + 2);
+                        if (!nextChar || /^[ ,\.!\?:;]/.test(nextChar)) {
+                            targetUsername = name;
+                            break;
+                        }
+                    }
+                }
+                if (!targetUsername) {
+                    const atMatch = text.match(/^@([^ ]+)/);
+                    targetUsername = atMatch ? atMatch[1] : null;
+                }
+            }
 
             // Generate a quick response from only the mentioned chatter (no full refresh)
             await generateSingleReply(text, targetUsername);
@@ -4365,6 +4432,25 @@ username: message
         jQuery(document).on('change', '#discord_chat_enabled', function () {
             settings.chatEnabled = this.checked;
             jQuery('.ec_reply_container').toggle(this.checked);
+            saveSettings();
+        });
+
+        jQuery(document).on('change', '#discord_chat_override_tokens', function () {
+            const enabled = this.checked;
+            settings.chatOverrideTokens = enabled;
+            jQuery('#discord_chat_max_tokens_container').toggle(enabled);
+            // Sync to modal if open
+            jQuery('#ecm_chat_override_tokens').prop('checked', enabled);
+            jQuery('#ecm_chat_max_tokens_container').toggle(enabled);
+            saveSettings();
+        });
+
+        jQuery(document).on('input change', '#discord_chat_max_tokens', function () {
+            const val = Math.max(10, Math.min(8192, parseInt(jQuery(this).val()) || 3000));
+            settings.chatMaxTokens = val;
+            jQuery(this).val(val);
+            // Sync to modal if open
+            jQuery('#ecm_chat_max_tokens').val(val);
             saveSettings();
         });
 

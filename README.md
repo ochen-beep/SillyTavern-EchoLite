@@ -1,35 +1,21 @@
 # EchoLite
 
-**EchoLite** — оптимизированный форк расширения [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber) для SillyTavern.
+**EchoLite** — облегченный и адаптированный под термукс версии Таверны форк [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber) для SillyTavern.
 
-Генерирует фейковый чат (зрители / комментарии), реагирующий на текущий диалог персонажей.
+Генерирует фейковый чат в стиле Discord, реагирующий на сцену в чате.
 
 ---
 
-## Изменения по сравнению с оригиналом
+## Разница по сравнению с оригиналом
 
 | Функция | EchoChamber | EchoLite |
 |---|---|---|
 | Livestream режим | ✅ | ❌ удалён |
 | Pop-out окно | ✅ | ❌ удалён |
-| 12 встроенных стилей | ✅ | 2 (Discord/Twitch + TikTok/Twitter) |
-| i18n (ru-ru) | ❌ | ✅ встроен в JS |
+| 12 встроенных стилей | ✅ | 1 (Discord/Twitch) |
+| i18n (ru язык на ru версии таверны) | ❌ | ✅ |
 | Мобильный фикс ST input | ❌ | ✅ `body.ec-bottom-active` |
-| 100dvh | ❌ | ✅ |
-| Touch-targets ≥44px | частично | ✅ |
-| Compact-mode header | ✅ | ✅ сохранён |
-| Override Max Tokens | ✅ | ✅ |
-
----
-
-## Установка
-
-1. Скопировать папку `SillyTavern-EchoLite` в:
-   ```
-   SillyTavern/public/scripts/extensions/third-party/
-   ```
-2. Перезапустить SillyTavern
-3. Включить в Extensions → EchoLite
+| Кэширование комментариев к конкретному посту или свайпу | ❌ | ✅ автоматическая подгрузка при перелистывании поста или свайпе|
 
 ---
 

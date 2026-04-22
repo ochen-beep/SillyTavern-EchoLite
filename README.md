@@ -1,6 +1,6 @@
 # EchoLite
 
-**EchoLite** — облегченный и адаптированный под термукс версии Таверны форк [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber) для SillyTavern.
+**EchoLite** — облегченный и адаптированный под термукс версии Таверны форк [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber)
 
 Генерирует фейковый чат в стиле Discord, реагирующий на сцену в чате.
 

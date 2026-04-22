@@ -1,308 +1,2020 @@
-<div class="discord_settings ec-s-panel">
-    <p class="ec-s-description" data-i18n="EchoLite">
-        EchoLite — fake chat feed reacting dynamically to conversation context.
-    </p>
+/* EchoLite Style — optimized fork of EchoChamber */
 
-    <!-- Global Enable -->
-    <label class="ec-s-toggle-row ec-s-global-enable">
-        <input type="checkbox" id="discord_enabled" class="checkbox">
-        <span class="ec-s-label-text">
-            <span class="ec-s-label-bold" data-i18n="Enable EchoChamber">Enable EchoLite</span>
-        </span>
-    </label>
+/* --- Variables & Theme --- */
+:root {
+    --ec-bg: var(--SmartThemeBlurTintColor, rgba(20, 20, 25, 0.85));
+    --ec-border: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+    --ec-text: var(--SmartThemeBodyColor, #dcddde);
+    --ec-accent: var(--SmartThemeQuoteColor, #43b581);
+    --ec-hover: rgba(255, 255, 255, 0.1);
+    --ec-radius: 8px;
+    --ec-header-height: 40px;
+    --ec-selection-bg: rgba(255, 255, 255, 0.15);
+}
 
-    <!-- ═══ GENERATION ENGINE ═══ -->
-    <div class="ec-s-section" data-default-open>
-        <button class="ec-s-section-header" aria-expanded="true" type="button">
-            <span class="ec-s-section-title">
-                <i class="fa-solid fa-microchip fa-fw"></i>
-                <span data-i18n="Generation Engine">Generation Engine</span>
-            </span>
-            <i class="fa-solid fa-chevron-down ec-s-chevron"></i>
-        </button>
-        <div class="ec-s-section-body">
-            <div class="ec-s-field-group">
-                <label class="ec-s-field-label" for="discord_source">
-                    <i class="fa-solid fa-plug fa-fw"></i>
-                    <span data-i18n="Source">Source</span>
-                </label>
-                <select id="discord_source" class="ec-s-select">
-                    <option value="default" data-i18n="Default (Main API)">Default (Main API)</option>
-                    <option value="profile" data-i18n="Connection Profile (Recommended)">Connection Profile (Recommended)</option>
-                    <option value="ollama" data-i18n="Ollama (Local)">Ollama (Local)</option>
-                    <option value="openai" data-i18n="OpenAI Compatible">OpenAI Compatible</option>
-                </select>
-            </div>
+/* --- Main Container --- */
+#discordBar {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--ec-border);
+    overflow: visible;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    /* z-index only on fixed-position modes (ec_left/ec_right/ec_popout).
+       In bottom mode (position: relative) a global z-index here creates a
+       stacking context that interferes with ST's own panels. */
+    transition: width 0.1s, height 0.1s;
+    border-radius: var(--ec-radius);
+    background: rgba(20, 20, 25, 0.85);
+}
 
-            <!-- Ollama sub-panel -->
-            <div id="discord_ollama_settings" class="ec-s-sub-panel ec-s-sub-panel--ollama" hidden>
-                <div class="ec-s-sub-panel-title"><i class="fa-solid fa-server fa-fw"></i> Ollama</div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_url">URL</label>
-                    <input type="text" id="discord_url" class="ec-s-input" placeholder="http://localhost:11434">
-                </div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_model_select">Model</label>
-                    <select id="discord_model_select" class="ec-s-select">
-                        <option value="">-- Select Model --</option>
-                    </select>
-                </div>
-            </div>
+/* ========================================= */
+/* PANEL POSITIONING & LAYOUT */
+/* ========================================= */
 
-            <!-- OpenAI sub-panel -->
-            <div id="discord_openai_settings" class="ec-s-sub-panel ec-s-sub-panel--openai" hidden>
-                <div class="ec-s-sub-panel-title"><i class="fa-solid fa-robot fa-fw"></i> <span data-i18n="OpenAI Compatible">OpenAI Compatible</span></div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_openai_preset">Preset</label>
-                    <select id="discord_openai_preset" class="ec-s-select">
-                        <option value="custom" data-i18n="Custom LM Studio (:1234)">Custom LM Studio (:1234)</option>
-                        <option value="lmstudio">LM Studio (:1234)</option>
-                        <option value="koboldcpp" data-i18n="KoboldCPP (:5001)">KoboldCPP (:5001)</option>
-                        <option value="textgenwebui" data-i18n="TextGenWebUI (:5000)">TextGenWebUI (:5000)</option>
-                        <option value="vllm" data-i18n="vLLM (:8000)">vLLM (:8000)</option>
-                    </select>
-                </div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_openai_url">URL</label>
-                    <input type="text" id="discord_openai_url" class="ec-s-input" placeholder="http://localhost:1234/v1">
-                </div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_openai_key">API Key</label>
-                    <input type="password" id="discord_openai_key" class="ec-s-input" placeholder="Optional">
-                </div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_openai_model">Model</label>
-                    <input type="text" id="discord_openai_model" class="ec-s-input" placeholder="local-model">
-                </div>
-            </div>
+/* Position: BOTTOM */
+#discordBar.ec_bottom {
+    position: relative;
+    width: 100%;
+    margin-top: 10px;
+    flex-shrink: 0;
+    border-top-left-radius: var(--ec-radius);
+    border-top-right-radius: var(--ec-radius);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
 
-            <!-- Profile sub-panel -->
-            <div id="discord_profile_settings" class="ec-s-sub-panel ec-s-sub-panel--profile" hidden>
-                <div class="ec-s-sub-panel-title"><i class="fa-solid fa-shield-halved fa-fw"></i> <span data-i18n="Connection Profile">Connection Profile</span></div>
-                <p class="ec-s-hint" data-i18n="Uses your existing ST credentials securely.">Uses your existing ST credentials securely.</p>
-                <div class="ec-s-field-group">
-                    <select id="discord_preset_select" class="ec-s-select">
-                        <option value="" data-i18n="-- Select Profile --">-- Select Profile --</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-    </div>
+/* Position: LEFT */
+#discordBar.ec_left {
+    position: fixed;
+    top: var(--topBarBlockSize);
+    bottom: 0;
+    left: 0;
+    z-index: 200001;
+    width: calc(50vw - var(--sheldWidth, var(--sheld-width, 1200px)) / 2);
+    min-width: 200px;
+    max-width: 600px;
+    height: calc(100dvh - var(--topBarBlockSize)) !important;
+    border-right: 1px solid var(--ec-border);
+    border-top: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+}
 
-    <!-- ═══ DISPLAY ═══ -->
-    <div class="ec-s-section">
-        <button class="ec-s-section-header" aria-expanded="false" type="button">
-            <span class="ec-s-section-title">
-                <i class="fa-solid fa-display fa-fw"></i>
-                <span data-i18n="Display">Display</span>
-            </span>
-            <i class="fa-solid fa-chevron-down ec-s-chevron"></i>
-        </button>
-        <div class="ec-s-section-body" hidden>
-            <div class="ec-s-grid-2">
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_position">
-                        <i class="fa-solid fa-arrows-up-down-left-right fa-fw"></i>
-                        <span data-i18n="Position">Position</span>
-                    </label>
-                    <select id="discord_position" class="ec-s-select">
-                        <option value="bottom" data-i18n="Bottom">Bottom</option>
-                                                <option value="left" data-i18n="Left">Left</option>
-                        <option value="right" data-i18n="Right">Right</option>
-                        <option value="popout" data-i18n="Pop Out">↗ Pop Out</option>
-                    </select>
-                </div>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_user_count">
-                        <i class="fa-solid fa-users fa-fw"></i>
-                        <span data-i18n="Users">Users</span>
-                    </label>
-                    <select id="discord_user_count" class="ec-s-select">
-                        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-                        <option value="4">4</option><option value="5" selected>5</option><option value="6">6</option>
-                        <option value="7">7</option><option value="8">8</option><option value="9">9</option>
-                        <option value="10">10</option><option value="12">12</option><option value="15">15</option>
-                        <option value="20">20</option>
-                    </select>
-                </div>
-            </div>
-            <div class="ec-s-grid-2">
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_font_size">
-                        <i class="fa-solid fa-font fa-fw"></i>
-                        <span data-i18n="Font (px)">Font (px)</span>
-                    </label>
-                    <input type="number" id="discord_font_size" class="ec-s-input ec-s-input-num"
-                           min="8" max="32" step="1" value="15">
-                </div>
-            </div>
-        </div>
-    </div>
+/* Position: RIGHT */
+#discordBar.ec_right {
+    position: fixed;
+    top: var(--topBarBlockSize);
+    bottom: 0;
+    right: 0;
+    z-index: 200001;
+    width: calc(50vw - var(--sheldWidth, var(--sheld-width, 1200px)) / 2);
+    min-width: 200px;
+    max-width: 600px;
+    height: calc(100dvh - var(--topBarBlockSize)) !important;
+    border-left: 1px solid var(--ec-border);
+    border-top: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+}
 
-    <!-- ═══ CONTENT SETTINGS ═══ -->
-    <div class="ec-s-section">
-        <button class="ec-s-section-header" aria-expanded="false" type="button">
-            <span class="ec-s-section-title">
-                <i class="fa-solid fa-sliders fa-fw"></i>
-                <span data-i18n="Content Settings">Content Settings</span>
-            </span>
-            <i class="fa-solid fa-chevron-down ec-s-chevron"></i>
-        </button>
-        <div class="ec-s-section-body" hidden>
-            <label class="ec-s-toggle-row">
-                <input type="checkbox" id="discord_auto_update" class="checkbox" checked>
-                <span class="ec-s-label-text" data-i18n="Auto-update On Messages">Auto-update On Messages</span>
-            </label>
-            <!-- No-Save Mode -->
-            <label class="ec-s-toggle-row">
-                <input type="checkbox" id="discord_no_save_mode" class="checkbox">
-                <span class="ec-s-label-text">
-                    <span class="ec-s-label-bold">Режим «Без сохранения»</span>
-                    <small class="ec-s-hint">Только генерирует комментарии к последнему посту — без сохранения в историю и без навигации по постам</small>
-                </span>
-            </label>
-            <p class="ec-s-hint ec-s-hint--indent" id="discord_no_save_mode_hint" style="display:none;color:var(--orange)">
-                <i class="fa-solid fa-circle-info"></i> Комментарии не сохраняются. Кнопка перегенерации и навигатор постов скрыты.
-            </p>
-            <label class="ec-s-toggle-row">
-                <input type="checkbox" id="discord_include_user" class="checkbox">
-                <span class="ec-s-label-text" data-i18n="Include Chat History">Include Chat History</span>
-            </label>
-            <div id="discord_context_depth_container" class="ec-s-sub-field" hidden>
-                <div class="ec-s-field-group">
-                    <label class="ec-s-field-label" for="discord_context_depth">
-                        <span data-i18n="Context Depth">Context Depth</span>
-                    </label>
-                    <input type="number" id="discord_context_depth" class="ec-s-input-num" min="2" max="500" value="4">
-                </div>
-            </div>
-            <label class="ec-s-toggle-row">
-                <input type="checkbox" id="discord_include_past_echo" class="checkbox">
-                <span class="ec-s-label-text">
-                    <span data-i18n="Include Past Generated EchoChambers">Include Past EchoLite Commentary</span>
-                    <small class="ec-s-hint" data-i18n="Includes previous commentary in the prompt for new generations">Includes previous commentary in the prompt</small>
-                </span>
-            </label>
+/* Collapsed State */
+#discordBar.ec_collapsed #discordContent,
+#discordBar.ec_collapsed .ec_resize_handle,
+#discordBar.ec_collapsed .ec_status_overlay,
+#discordBar.ec_collapsed .ec_post_indicator {
+    display: none !important;
+}
+#discordBar.ec_collapsed {
+    height: auto !important;
+    bottom: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+}
+#discordBar.ec_collapsed #discordQuickSettings {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 0 4px !important;
+}
 
-            <!-- Include in Context sub-section -->
-            <div class="ec-s-context-sub">
-                <div class="ec-s-context-sub-title">
-                    <i class="fa-solid fa-layer-group fa-fw"></i>
-                    <span data-i18n="Include in Context">Include in Context</span>
-                </div>
-                <label class="ec-s-toggle-row ec-s-radio-row">
-                    <input type="checkbox" id="discord_include_persona" class="checkbox">
-                    <span data-i18n="Persona">Персона (карточка юзера)</span>
-                </label>
-                <label class="ec-s-toggle-row ec-s-radio-row">
-                    <input type="checkbox" id="discord_include_character_description" class="checkbox">
-                    <span data-i18n="Character Description(s)">Персонаж</span>
-                </label>
-                <label class="ec-s-toggle-row ec-s-radio-row">
-                    <input type="checkbox" id="discord_include_world_info" class="checkbox">
-                    <span data-i18n="World Info / Lorebook">World Info / Lorebook</span>
-                </label>
-                <p class="ec-s-hint ec-s-hint--indent" data-i18n="Additional context to include when generating the chat feed">Additional context to include when generating the chat feed</p>
-                <div id="discord_wi_budget_container" class="ec-s-sub-field" hidden>
-                    <div class="ec-s-field-group">
-                        <label class="ec-s-field-label" for="discord_wi_budget">
-                            <span data-i18n="WI Token Budget">WI Token Budget</span>
-                            <span class="ec-s-hint" data-i18n="0 = use ST budget">(0 = use ST budget)</span>
-                        </label>
-                        <input type="number" id="discord_wi_budget" class="ec-s-input-num" min="0" value="0">
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+/* --- Header --- */
+#discordQuickSettings {
+    height: var(--ec-header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--ec-border);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 200005;
+    background: rgba(0, 0, 0, 0.25);
+}
 
-    <!-- ═══ PROMPT CUSTOMIZER ═══ -->
-    <div class="ec-s-section">
-        <button class="ec-s-section-header" aria-expanded="false" type="button">
-            <span class="ec-s-section-title">
-                <i class="fa-solid fa-scroll fa-fw"></i>
-                <span data-i18n="Generation Rules">Промт</span>
-            </span>
-            <i class="fa-solid fa-chevron-down ec-s-chevron"></i>
-        </button>
-        <div class="ec-s-section-body" hidden>
+.ec_header_left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    min-width: 0;
+}
 
-            <!-- Mode toggle -->
-            <div class="ec-prompt-mode-row">
-                <span class="ec-prompt-mode-label" id="ec_prompt_mode_label_base">Базовый</span>
-                <label class="ec-prompt-toggle-wrap">
-                    <input type="checkbox" id="discord_prompt_custom_mode" class="ec-prompt-toggle-input">
-                    <span class="ec-prompt-toggle-track">
-                        <span class="ec-prompt-toggle-thumb"></span>
-                    </span>
-                </label>
-                <span class="ec-prompt-mode-label" id="ec_prompt_mode_label_custom">Настраиваемый</span>
-            </div>
+.ec_header_right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
 
-            <!-- ─── BASE MODE: read-only blocks ─── -->
-            <div id="ec_prompt_base_view">
-                <p class="ec-s-hint" style="margin-bottom:8px">Базовый промт RealDiscord. Блоки только для просмотра.</p>
+/* Power Button */
+.ec_power_btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--ec-accent);
+    transition: all 0.2s;
+    flex-shrink: 0;
+    border-radius: 4px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ec_power_btn:hover { background: var(--ec-hover); } }
 
-                <div class="ec-prompt-block ec-prompt-block--readonly">
-                    <div class="ec-prompt-block-title"><i class="fa-solid fa-at fa-fw"></i> Ники (Nickname Aesthetics)</div>
-                    <div id="ec_base_block_nicknames" class="ec-prompt-block-body ec-prompt-block-text"></div>
-                </div>
+/* Collapse Button */
+.ec_collapse_btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--ec-text);
+    transition: all 0.2s;
+    flex-shrink: 0;
+    border-radius: 4px;
+    font-size: 0.8em;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+    .ec_collapse_btn:hover { background: var(--ec-hover); color: var(--ec-accent); transform: scale(1.15); }
+}
 
-                <div class="ec-prompt-block ec-prompt-block--readonly">
-                    <div class="ec-prompt-block-title"><i class="fa-solid fa-users fa-fw"></i> Типы комментаторов (Commenter Personas)</div>
-                    <div id="ec_base_block_personas" class="ec-prompt-block-body ec-prompt-block-text"></div>
-                </div>
+#discordBar.ec_collapsed .ec_collapse_btn {
+    color: var(--ec-accent);
+    opacity: 1 !important;
+    background: rgba(67, 181, 129, 0.12);
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    font-size: 0.95em;
+    box-shadow: 0 0 0 1px rgba(67, 181, 129, 0.3);
+}
+@media (hover: hover) {
+    #discordBar.ec_collapsed .ec_collapse_btn:hover {
+        background: rgba(67, 181, 129, 0.25);
+        box-shadow: 0 0 0 1px rgba(67, 181, 129, 0.6);
+        transform: scale(1.15);
+    }
+}
 
-                <div class="ec-prompt-block ec-prompt-block--readonly">
-                    <div class="ec-prompt-block-title"><i class="fa-solid fa-language fa-fw"></i> Язык и тон (Language &amp; Tone)</div>
-                    <div id="ec_base_block_language" class="ec-prompt-block-body ec-prompt-block-text"></div>
-                </div>
-            </div>
+/* Icon Buttons */
+.ec_btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--ec-accent);
+    opacity: 0.7;
+    transition: background 0.2s, opacity 0.2s;
+    font-size: 0.9em;
+    position: relative;
+    z-index: 200002;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+    .ec_btn:hover, .ec_btn.active { background: var(--ec-hover); opacity: 1; }
+}
 
-            <!-- ─── CUSTOM MODE: editable sections ─── -->
-            <div id="ec_prompt_custom_view" style="display:none">
-                <p class="ec-s-hint" style="margin-bottom:8px">Заполните блоки, которые хотите переопределить. Пустые блоки используют базовые значения.</p>
+/* --- Content Area --- */
+#discordContent {
+    flex-grow: 0;
+    flex-shrink: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    padding: 4px 0;
+    min-height: 60px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    /* Prevent scroll from bleeding into the page on Android (both Chromium & Firefox) */
+    overscroll-behavior: contain;
+    /* Legacy momentum scrolling for old Android WebView */
+    -webkit-overflow-scrolling: touch;
+}
+#discordContent::-webkit-scrollbar { width: 6px; }
+#discordContent::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
 
-                <!-- NICKNAME AESTHETICS -->
-                <div class="ec-prompt-block ec-prompt-block--editable">
-                    <div class="ec-prompt-block-title">
-                        <i class="fa-solid fa-at fa-fw"></i> Ники (Nickname Aesthetics)
-                    </div>
-                    <div class="ec-prompt-block-body">
-                        <textarea id="discord_prompt_nicknames" class="ec-prompt-textarea" rows="4"
-                            placeholder="Опишите стиль ников. Например: только английские ники, минималистичные, без цифр..."></textarea>
-                    </div>
-                </div>
+#discordBar.ec_right #discordContent {
+    flex: 1;
+    min-height: 0;
+    height: auto !important;
+    overflow-y: auto;
+    padding-left: 20px;
+}
 
-                <!-- COMMENTER PERSONAS -->
-                <div class="ec-prompt-block ec-prompt-block--editable">
-                    <div class="ec-prompt-block-title">
-                        <i class="fa-solid fa-users fa-fw"></i> Типы комментаторов (Commenter Personas)
-                    </div>
-                    <div class="ec-prompt-block-body">
-                        <textarea id="discord_prompt_personas" class="ec-prompt-textarea" rows="5"
-                            placeholder="Перечислите типы пользователей. Например: &#10;- Скептики — сомневаются во всём&#10;- Фанаты — от восторга теряют слова&#10;- Критики — цитируют и разбирают каждую фразу"></textarea>
-                    </div>
-                </div>
+#discordBar.ec_left #discordContent {
+    flex: 1;
+    min-height: 0;
+    height: auto !important;
+    overflow-y: auto;
+    padding-right: 20px;
+}
 
-                <!-- LANGUAGE & TONE -->
-                <div class="ec-prompt-block ec-prompt-block--editable">
-                    <div class="ec-prompt-block-title">
-                        <i class="fa-solid fa-language fa-fw"></i> Язык и тон (Language &amp; Tone)
-                    </div>
-                    <div class="ec-prompt-block-body">
-                        <textarea id="discord_prompt_language" class="ec-prompt-textarea" rows="4"
-                            placeholder="Опишите язык и тон. Например: английский, без мата, короткие предложения, твиттер-стиль..."></textarea>
-                    </div>
-                </div>
+/* bottom: panel content area must have an explicit max-height so scroll
+   stays inside the panel and never propagates to the page */
+#discordBar.ec_bottom #discordContent {
+    padding-top: 8px;
+    max-height: 50vh;
+}
+/* When bottom panel is manually resized — let content fill the panel height */
+#discordBar.ec_bottom[style*="height"] #discordContent {
+    max-height: calc(100% - var(--ec-header-height, 36px));
+    flex: 1;
+}
 
-            </div>
+/* --- Resize Handle --- */
+.ec_resize_handle {
+    flex-shrink: 0;
+    z-index: 2001;
+    transition: background 0.2s;
+    position: relative;
+    user-select: none;
+    touch-action: none;
+}
+.ec_resize_handle::before {
+    content: '';
+    position: absolute;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+.ec_resize_handle:hover::before,
+.ec_resize_handle.resizing::before { background: var(--ec-accent); }
 
-            <!-- Скрытое поле customPrompt (legacy, для совместимости) -->
-            <input type="hidden" id="discord_custom_prompt">
+#discordBar.ec_bottom .ec_resize_handle {
+    position: absolute; top: 0; left: 0; width: 100%; height: 12px;
+    cursor: ns-resize;
+    background: linear-gradient(to bottom, rgba(128, 128, 128, 0.3), transparent);
+    border-radius: var(--ec-radius) var(--ec-radius) 0 0;
+}
+#discordBar.ec_bottom .ec_resize_handle::before {
+    width: 40px; height: 4px; left: 50%; top: 4px; transform: translateX(-50%);
+}
+#discordBar.ec_left .ec_resize_handle {
+    height: 100%; width: 10px; cursor: ew-resize;
+    position: absolute; right: 0; top: 0;
+    background: linear-gradient(to right, transparent, rgba(128, 128, 128, 0.3));
+}
+#discordBar.ec_left .ec_resize_handle::before {
+    width: 4px; height: 40px; left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
+#discordBar.ec_right .ec_resize_handle {
+    height: 100%; width: 10px; cursor: ew-resize;
+    position: absolute; left: 0; top: 0;
+    background: linear-gradient(to left, transparent, rgba(128, 128, 128, 0.3));
+}
+#discordBar.ec_right .ec_resize_handle::before {
+    width: 4px; height: 40px; left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
 
-        </div>
-    </div>
+#discordBar.ec_bottom { padding-top: 12px; }
 
-    <p class="ec-s-version">EchoLite v0.5 (based on EchoChamber)</p>
-</div>
+/* Status Overlay */
+.ec_status_overlay {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.95);
+    border: 1px solid var(--ec-border);
+    padding: 6px 16px;
+    border-radius: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    z-index: 100;
+    font-size: 0.85em;
+    white-space: nowrap;
+    width: fit-content;
+    max-width: 90%;
+}
+.ec_status_overlay.active { display: flex; }
+
+.ec_status_btn {
+    background: rgba(240, 71, 71, 0.2);
+    color: #ff5555;
+    border: 1px solid rgba(240, 71, 71, 0.4);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+    animation: glow-pulse 1.5s ease-in-out infinite;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 4px 1px rgba(255, 85, 85, 0.2); }
+    50% { box-shadow: 0 0 12px 3px rgba(255, 85, 85, 0.5); }
+}
+@media (hover: hover) {
+    .ec_status_btn:hover { background: rgba(240, 71, 71, 0.35); animation: none; }
+}
+
+/* ========================================= */
+/* MENUS */
+/* ========================================= */
+.ec_popup_menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 180px;
+    background: rgba(10, 14, 24, 0.98) !important;
+    border: 1px solid var(--ec-border);
+    border-radius: 6px;
+    padding: 5px;
+    display: none;
+    z-index: 200001;
+    margin-top: 5px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.96);
+}
+.ec_popup_menu { z-index: 300000 !important; }
+.ec_btn { z-index: 200002; overflow: visible; }
+.ec_btn.open { z-index: 300200 !important; }
+.ec_btn.open .ec_popup_menu,
+.ec_layout_menu,
+.ec_user_menu,
+.ec_font_menu,
+#ec_overflow_menu_body { z-index: 300201 !important; }
+#discordQuickSettings { overflow: visible; }
+#discordBar { overflow: visible; }
+
+.ec_layout_menu,
+.ec_user_menu,
+.ec_font_menu {
+    background: rgba(10, 14, 24, 0.98) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.ec_user_menu,
+.ec_font_menu { max-height: 220px; overflow-y: auto; }
+.ec_btn.open .ec_popup_menu { display: block; }
+#discordBar.ec_bottom .ec_popup_menu {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: 4px;
+    margin-top: 0;
+}
+
+.ec_menu_item {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: 0;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 0.9em;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+    min-height: 40px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+    .ec_menu_item:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+}
+.ec_menu_item.selected {
+    background: var(--ec-selection-bg);
+    color: #fff;
+    font-weight: 600;
+    position: relative;
+}
+.ec_menu_item.selected::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 4px; bottom: 4px;
+    width: 3px;
+    background: var(--ec-accent);
+    border-radius: 2px;
+}
+
+/* ========================================= */
+/* OVERFLOW / COMPACT MODE */
+/* ========================================= */
+#discordQuickSettings.ec_compact .ec_btn:not(.ec_qs_btn):not(#ec_regen_btn) { display: none; }
+#ec_qs_menu_body { z-index: 300201 !important; }
+
+.ec_overflow_menu {
+    min-width: 230px;
+    max-width: 290px;
+    width: max-content;
+    padding: 4px;
+    overflow-y: auto;
+    max-height: 75dvh;
+}
+.ec_of_divider_line {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 4px 6px;
+}
+.ec_of_item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.9em;
+    transition: background 0.15s, color 0.15s;
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+    .ec_of_item:hover, .ec_of_item:active { background: rgba(255, 255, 255, 0.1); color: #fff; }
+}
+.ec_of_item i { width: 16px; text-align: center; opacity: 0.8; flex-shrink: 0; }
+.ec_of_danger { color: rgba(240, 95, 95, 0.9); }
+@media (hover: hover) {
+    .ec_of_danger:hover { background: rgba(240, 100, 100, 0.1); color: rgba(255, 110, 110, 1); }
+}
+
+.ec_of_accordion { border-radius: 5px; overflow: hidden; }
+.ec_of_acc_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.82em;
+    font-weight: 600;
+    border-radius: 5px;
+    transition: background 0.15s, color 0.15s;
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+.ec_of_acc_header span { display: flex; align-items: center; gap: 7px; }
+.ec_of_acc_header span i { opacity: 0.8; width: 14px; text-align: center; }
+@media (hover: hover) { .ec_of_acc_header:hover { background: rgba(255, 255, 255, 0.07); color: #fff; } }
+.ec_of_chevron {
+    font-size: 0.7em; opacity: 0.5;
+    transition: transform 0.2s ease; flex-shrink: 0;
+}
+.ec_of_chevron.ec_of_rotated { transform: rotate(90deg); opacity: 0.9; }
+
+.ec_of_acc_body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.22s ease, padding 0.22s ease;
+    padding: 0 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+.ec_of_acc_body.ec_of_open { max-height: 240px; padding: 0 6px 6px; }
+
+.ec_of_chip_wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.ec_of_chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 40px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.82em;
+    color: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    min-height: 36px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+@media (hover: hover) {
+    .ec_of_chip:hover { background: rgba(255, 255, 255, 0.12); color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+}
+.ec_of_chip.ec_of_selected {
+    background: rgba(67, 181, 129, 0.15);
+    border-color: var(--ec-accent, #43b581);
+    color: var(--ec-accent, #43b581);
+    font-weight: 600;
+}
+.ec_of_num { min-width: 38px; }
+
+/* ========================================= */
+/* MESSAGE LAYOUT */
+/* ========================================= */
+.discord_message {
+    display: flex;
+    align-items: flex-start;
+    padding: 4px 16px;
+    margin-top: 2px;
+    line-height: 1.375em;
+}
+.discord_avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    margin-right: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 500;
+    font-size: 18px;
+    user-select: none;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+#discordBar.ec_left .discord_avatar,
+#discordBar.ec_right .discord_avatar { width: 32px; height: 32px; margin-right: 10px; font-size: 14px; }
+
+.discord_body { flex-grow: 1; min-width: 0; }
+.discord_header { display: flex; align-items: baseline; gap: 5px; }
+.discord_username { font-weight: 600; font-size: 1em; cursor: pointer !important; }
+@media (hover: hover) { .discord_username:hover { text-decoration: underline; } }
+.discord_timestamp { display: none; }
+.discord_content {
+    color: var(--SmartThemeBodyColor, #dcddde);
+    opacity: 0.95;
+    font-size: 0.95em;
+    line-height: 1.5em;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.discord_content em { color: var(--SmartThemeQuoteColor); font-style: italic; }
+.discord_content strong { font-weight: bold; }
+.discord_content code { background: rgba(0,0,0,0.3); padding: 0 4px; border-radius: 3px; font-family: monospace; }
+
+/* Side panel float layout */
+#discordBar.ec_left .discord_message,
+#discordBar.ec_right .discord_message { display: block; overflow: hidden; padding: 8px 10px; }
+#discordBar.ec_left .discord_avatar,
+#discordBar.ec_right .discord_avatar { float: left; margin-right: 8px; margin-bottom: 2px; }
+#discordBar.ec_left .discord_body,
+#discordBar.ec_right .discord_body { display: block; overflow: visible; }
+#discordBar.ec_left .discord_header,
+#discordBar.ec_right .discord_header { display: inline-block; margin-bottom: 2px; }
+#discordBar.ec_left .discord_content,
+#discordBar.ec_right .discord_content { display: block; margin-top: 0; }
+#discordBar.ec_left .discord_timestamp,
+#discordBar.ec_right .discord_timestamp { display: none; }
+
+/* Discord container in content */
+.discord_container { padding-top: 10px; }
+
+/* Status messages */
+.discord_status {
+    text-align: center;
+    padding: 20px;
+    color: var(--ec-text);
+    opacity: 0.7;
+    font-style: italic;
+}
+.discord_status.ec_cancelled {
+    color: var(--SmartThemeQuoteColor, var(--ec-accent, #43b581));
+    opacity: 1;
+    font-style: normal;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    animation: ec_fade_in 0.3s ease-out;
+    transition: opacity 0.5s ease-out;
+}
+.discord_status.ec_cancelled.fade-out { opacity: 0; }
+@keyframes ec_fade_in {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Disabled state */
+#discordBar.ec_disabled .ec_chat_container,
+#discordBar.ec_disabled .ec_message,
+#discordBar.ec_disabled .ec_typing_indicator { opacity: 0.5; }
+
+/* ========================================= */
+/* MOBILE — hide ST send_form when EC bottom active */
+/* ========================================= */
+@media (max-width: 768px) {
+    body.ec-bottom-active #send_form {
+        display: none !important;
+    }
+}
+
+/* ========================================= */
+/* COLLAPSED PANEL */
+/* ========================================= */
+#discordBar.ec_bottom.ec_collapsed #discordQuickSettings { height: 28px !important; min-height: 28px !important; padding: 0 8px !important; }
+
+#discordBar.ec_left.ec_collapsed,
+#discordBar.ec_right.ec_collapsed {
+    position: fixed !important;
+    top: var(--topBarBlockSize) !important;
+    bottom: 0 !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: calc(100dvh - var(--topBarBlockSize)) !important;
+    padding: 0 !important;
+    flex-direction: column !important;
+    border-radius: 0 !important;
+    z-index: 2005 !important;
+}
+#discordBar.ec_left.ec_collapsed { left: 0 !important; right: auto !important; border-right: 1px solid var(--ec-border) !important; }
+#discordBar.ec_right.ec_collapsed { left: auto !important; right: 0 !important; border-left: 1px solid var(--ec-border) !important; }
+
+#discordBar.ec_left.ec_collapsed #discordQuickSettings,
+#discordBar.ec_right.ec_collapsed #discordQuickSettings {
+    width: 100% !important; height: auto !important; min-height: auto !important;
+    flex-direction: column !important; padding: 6px 4px !important;
+    border-bottom: none !important; align-items: center !important;
+    justify-content: flex-start !important; gap: 4px !important;
+}
+#discordBar.ec_left.ec_collapsed .ec_header_left,
+#discordBar.ec_right.ec_collapsed .ec_header_left {
+    display: flex !important; flex-direction: column !important; align-items: center !important;
+}
+#discordBar.ec_left.ec_collapsed .ec_header_right,
+#discordBar.ec_right.ec_collapsed .ec_header_right {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+/* Hide action buttons but keep the collapse/expand button visible */
+#discordBar.ec_left.ec_collapsed .ec_header_right .ec_btn:not(#ec_regen_btn),
+#discordBar.ec_right.ec_collapsed .ec_header_right .ec_btn:not(#ec_regen_btn) { display: none !important; }
+
+/* ========================================= */
+/* RESPONSIVE */
+/* ========================================= */
+@media (max-width: 1200px) and (min-width: 769px) {
+    #discordBar.ec_left, #discordBar.ec_right { min-width: 250px !important; }
+    #discordBar.ec_bottom { width: 100% !important; }
+    #discordBar.ec_bottom.ec_collapsed { margin-top: 0 !important; padding: 0 !important; border-top: none !important; }
+    #discordBar.ec_bottom:not(.ec_collapsed) { z-index: 3000 !important; max-height: 60vh !important; }
+    #discordBar.ec_bottom:not(.ec_collapsed) #discordContent { max-height: calc(60vh - 36px) !important; }
+}
+
+@media (max-width: 768px) {
+    #discordBar.ec_bottom { width: 100% !important; max-width: 100% !important; }
+
+    #discordBar.ec_bottom {
+        position: relative !important;
+        margin-top: 0 !important;
+        border-radius: 0 !important;
+        border-top-left-radius: var(--ec-radius) !important;
+        border-top-right-radius: var(--ec-radius) !important;
+    }
+    #discordBar.ec_bottom:not(.ec_collapsed) { z-index: 3000 !important; max-height: 60dvh !important; }
+    #discordBar.ec_bottom #discordContent { max-height: 200px !important; overflow-y: auto !important; }
+    #discordBar.ec_bottom:not(.ec_collapsed) #discordContent { max-height: calc(60dvh - 36px) !important; }
+    #discordBar.ec_bottom.ec_collapsed { height: auto !important; margin-top: 0 !important; padding: 0 !important; border-top: none !important; }
+    #discordBar.ec_bottom.ec_collapsed #discordQuickSettings { margin-top: 0 !important; padding-top: 0 !important; }
+
+    #discordBar.ec_left,
+    #discordBar.ec_right {
+        position: fixed !important;
+        top: var(--topBarBlockSize) !important;
+        bottom: 0 !important;
+        height: calc(100dvh - var(--topBarBlockSize)) !important;
+        border-top: none !important;
+        border-radius: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+    }
+    #discordBar.ec_left { left: 0 !important; right: auto !important; }
+    #discordBar.ec_right { right: 0 !important; left: auto !important; }
+    #discordBar.ec_left.ec_collapsed,
+    #discordBar.ec_right.ec_collapsed { width: 36px !important; min-width: 36px !important; max-width: 36px !important; }
+    #discordBar.ec_left #discordContent,
+    #discordBar.ec_right #discordContent { flex-grow: 1 !important; }
+
+    #discordQuickSettings { padding: 0 6px; height: 36px; }
+    .ec_btn { width: 34px; height: 34px; font-size: 1.05em; }
+
+    /* Bottom panel safe area */
+    .ec_modal_content { width: 95% !important; max-width: 95% !important; max-height: 95dvh !important; border-radius: 8px; }
+    .ec_modal_body { min-height: 300px; flex-direction: column; }
+    .ec_style_sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--SmartThemeBorderColor, #333); max-height: 150px; }
+    .ec_form_row { flex-direction: column; gap: 10px; }
+    .discord_message { padding: 4px 8px; }
+    .discord_avatar { width: 28px; height: 28px; font-size: 12px; margin-right: 8px; }
+    .discord_username { font-size: 0.85em; }
+    .discord_content { font-size: 0.85em; }
+}
+
+@media (max-width: 480px) {
+    .ec_header_right { gap: 6px; }
+    .ec_btn { width: 30px; height: 30px; font-size: 0.95em; }
+    .discord_avatar { width: 24px; height: 24px; font-size: 11px; }
+    .discord_timestamp { display: none; }
+    .ec_modal_footer { flex-direction: column; gap: 8px; }
+    .ec_modal_footer button { width: 100%; }
+}
+
+/* ========================================= */
+/* STYLE MANAGER BUTTONS */
+/* ========================================= */
+.discord_settings #discord_open_style_editor,
+.discord_settings #discord_import_btn {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; padding: 10px; font-size: 0.85em; margin: 0 !important;
+}
+
+/* ========================================= */
+/* SETTINGS MODAL */
+/* ========================================= */
+#ec_settings_modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200011;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    /* Solid opaque background — no see-through */
+    background: rgba(8, 8, 10, 0.94);
+}
+#ec_settings_modal.ecm_visible { opacity: 1; pointer-events: all; }
+.ecm_backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    /* backdrop-filter removed — expensive GPU operation */
+}
+.ecm_card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 580px;
+    max-height: 90dvh;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(160deg, rgba(18, 19, 24, 0.98) 0%, rgba(22, 23, 30, 0.98) 100%);
+    border: 1px solid var(--ec-border, rgba(255, 255, 255, 0.15));
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    transform: translateY(10px) scale(0.98);
+    transition: transform 0.25s ease;
+    overflow: hidden;
+}
+#ec_settings_modal.ecm_visible .ecm_card { transform: translateY(0) scale(1); }
+
+.ecm_header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ec-border, rgba(255, 255, 255, 0.12));
+    background: rgba(0, 0, 0, 0.3);
+    flex-shrink: 0; position: sticky; top: 0; z-index: 5;
+}
+.ecm_header_title {
+    font-size: 1em; font-weight: 700; color: var(--ec-accent, #43b581);
+    display: flex; align-items: center; gap: 8px; letter-spacing: 0.3px;
+}
+.ecm_close_btn {
+    width: 28px; height: 28px; min-width: 28px; min-height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; cursor: pointer;
+    color: rgba(255, 255, 255, 0.5); font-size: 1.1em;
+    transition: background 0.15s, color 0.15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ecm_close_btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.9); } }
+
+.ecm_body {
+    overflow-y: auto; padding: 12px 16px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.ecm_body::-webkit-scrollbar { width: 5px; }
+.ecm_body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+
+.ecm_section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px; padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+}
+.ecm_section_title {
+    font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--ec-accent, #43b581);
+    display: flex; align-items: center; gap: 6px;
+    padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); margin-bottom: 2px;
+}
+/* .ecm_row / .ecm_toggle_row — canonical blocks below (~line 1011) */
+.ecm_label { font-size: 0.88em; color: var(--ec-text, #dcddde); flex: 1; user-select: none; }
+
+.ecm_toggle {
+    appearance: none; -webkit-appearance: none;
+    width: 40px; height: 22px;
+    background: rgba(255, 255, 255, 0.15); border-radius: 11px;
+    cursor: pointer; position: relative; flex-shrink: 0;
+    transition: background 0.2s; border: none; outline: none;
+}
+.ecm_toggle::after {
+    content: ''; position: absolute;
+    width: 16px; height: 16px; background: rgba(255, 255, 255, 0.7);
+    border-radius: 50%; top: 3px; left: 3px; transition: transform 0.2s, background 0.2s;
+}
+.ecm_toggle:checked { background: var(--ec-accent, #43b581); }
+.ecm_toggle:checked::after { transform: translateX(18px); background: #fff; }
+
+.ecm_select {
+    background: rgba(0, 0, 0, 0.4); border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    border-radius: 6px; color: var(--ec-text, #dcddde); font-size: 0.85em;
+    padding: 5px 8px; width: 100%; cursor: pointer; outline: none;
+    transition: border-color 0.15s;
+}
+.ecm_select:focus { border-color: var(--ec-accent, #43b581); }
+
+.ecm_input {
+    background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px; color: var(--ec-text, #dcddde); font-size: 0.85em;
+    padding: 6px 9px; width: 100%; outline: none;
+    transition: border-color 0.15s; box-sizing: border-box;
+}
+.ecm_input:focus { border-color: var(--ec-accent, #43b581); }
+.ecm_input_sm { width: 72px; flex-shrink: 0; text-align: center; }
+
+.ecm_color_input {
+    width: 48px !important; height: 36px; padding: 2px 3px;
+    border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15);
+    background: transparent; cursor: pointer; flex-shrink: 0;
+    -webkit-appearance: none; appearance: none;
+}
+.ecm_color_input::-webkit-color-swatch-wrapper { padding: 0; border-radius: 4px; }
+.ecm_color_input::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+.ecm_slider { flex: 1; accent-color: var(--ec-accent, #43b581); cursor: pointer; height: 4px; }
+
+.ecm_subpanel_green { border-left: 3px solid rgba(0, 255, 0, 0.4); background: rgba(0, 255, 0, 0.03); }
+.ecm_subpanel_blue { border-left: 3px solid rgba(0, 180, 255, 0.4); background: rgba(0, 180, 255, 0.03); }
+.ecm_subpanel_purple { border-left: 3px solid rgba(100, 150, 255, 0.4); background: rgba(100, 150, 255, 0.03); }
+.ecm_subpanel_plain {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px; padding: 10px 12px; margin-top: 6px;
+    display: flex; flex-direction: column; gap: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* .ecm_subpanel_title base — canonical block below (~line 971) */
+#ecm_opacity_val { font-size: 0.8em; opacity: 0.6; min-width: 34px; text-align: right; }
+
+.ecm_hint { font-size: 0.75em; opacity: 0.6; margin-top: 5px; }
+.ecm_input_gap { margin-bottom: 6px; }
+.ecm_icon { width: 14px; text-align: center; flex-shrink: 0; }
+
+/* Accordion */
+.ecm_acc_header {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    background: none; border: none; padding: 8px 0; cursor: pointer;
+    color: var(--ec-text, #dcddde); font-size: 0.9em; font-weight: 600; text-align: left;
+    transition: color 0.15s; outline: none; touch-action: manipulation;
+}
+@media (hover: hover) { .ecm_acc_header:hover { color: var(--ec-accent, #43b581); } }
+.ecm_acc_title {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--ec-accent, #43b581); user-select: none;
+}
+.ecm_acc_chevron { font-size: 0.75em; opacity: 0.5; transition: transform 0.2s ease, opacity 0.2s; flex-shrink: 0; }
+.ecm_acc_header[aria-expanded="true"] .ecm_acc_chevron { transform: rotate(180deg); opacity: 1; }
+.ecm_acc_body { display: flex; flex-direction: column; gap: 6px; padding: 4px 0 8px; }
+.ecm_acc_body[hidden] { display: none; }
+.ecm_acc .ecm_acc_header { border-bottom: 1px solid rgba(255, 255, 255, 0.06); margin-bottom: 0; padding-bottom: 8px; }
+.ecm_acc_header[aria-expanded="true"] { border-bottom-color: rgba(255, 255, 255, 0.1); }
+
+/* Footer */
+.ecm_footer {
+    padding: 10px 16px 14px; border-top: 1px solid var(--ec-border, rgba(255, 255, 255, 0.1));
+    flex-shrink: 0; background: rgba(0, 0, 0, 0.2);
+    display: flex; align-items: center; gap: 8px;
+}
+.ecm_footer_left { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ecm_footer_right { flex: 1; min-width: 0; }
+.ecm_footer_btn {
+    padding: 8px 12px;
+    background: var(--SmartThemeBlurTintColor, #2a2c31);
+    color: var(--SmartThemeBodyColor, #ccc);
+    border: 1px solid var(--ec-border, rgba(255, 255, 255, 0.15));
+    border-radius: 7px; font-size: 0.9em; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    transition: filter 0.15s, transform 0.1s; white-space: nowrap;
+    min-height: 40px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ecm_footer_btn:hover { filter: brightness(1.18); } }
+.ecm_footer_btn:active { transform: scale(0.97); }
+.ecm_done_btn {
+    width: 100%; padding: 12px 0;
+    background: var(--SmartThemeBlurTintColor, #2a2c31);
+    color: var(--SmartThemeBodyColor, #ccc);
+    border: 1px solid var(--SmartThemeQuoteColor, #43b581);
+    border-radius: 7px; font-size: 1.05em; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    gap: 7px; transition: filter 0.15s, transform 0.1s;
+    min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ecm_done_btn:hover { filter: brightness(1.12); } }
+.ecm_done_btn:active { transform: scale(0.98); }
+
+/* Sub-panels inside settings modal (profile, ollama, openai) */
+.ecm_subpanel {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.1));
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ecm_subpanel_title {
+    font-size: 0.82em;
+    font-weight: 600;
+    color: var(--SmartThemeQuoteColor, #f0a500);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+/* Two-pane layout */
+.ecm_layout { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.ecm_sidebar {
+    width: 175px; min-width: 155px; flex-shrink: 0;
+    padding: 14px 8px;
+    border-right: 1px solid var(--ec-border, rgba(255, 255, 255, 0.1));
+    overflow-y: auto; background: rgba(0, 0, 0, 0.18);
+    scrollbar-width: none;
+}
+.ecm_sidebar::-webkit-scrollbar { display: none; }
+.ecm_nav_list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ecm_nav_item {
+    display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+    border-radius: 6px; color: rgba(255, 255, 255, 0.52);
+    font-size: 0.79em; font-weight: 600; letter-spacing: 0.2px;
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+    user-select: none; background: none; border: none; width: 100%; text-align: left;
+    min-height: 36px; touch-action: manipulation;
+}
+.ecm_nav_item i { width: 13px; text-align: center; font-size: 0.82em; flex-shrink: 0; opacity: 0.75; }
+@media (hover: hover) { .ecm_nav_item:hover { background: rgba(255, 255, 255, 0.07); color: rgba(255, 255, 255, 0.9); } }
+.ecm_nav_item.ecm_nav_active { background: rgba(67, 181, 129, 0.14); color: var(--ec-accent, #43b581); }
+.ecm_nav_item.ecm_nav_active i { color: var(--ec-accent, #43b581); opacity: 1; }
+
+.ecm_content {
+    flex: 1; overflow-y: auto; padding: 14px 18px 24px;
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+    padding-bottom: 70vh;
+}
+.ecm_content::-webkit-scrollbar { width: 5px; }
+.ecm_content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 3px; }
+
+.ecm_row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; width: 100%; gap: 12px; min-height: 32px; }
+.ecm_row > select,
+.ecm_row > input:not([type="checkbox"]):not([type="radio"]) { flex-shrink: 0; width: 150px; max-width: 50%; }
+.ecm_toggle_row { justify-content: flex-start; padding: 8px 12px; background: rgba(0, 0, 0, 0.1); border-radius: 6px; cursor: pointer; margin: 0 0 4px 0; transition: background 0.15s; min-height: 44px; }
+@media (hover: hover) { .ecm_toggle_row:hover { background: rgba(255, 255, 255, 0.06); } }
+.ecm_toggle_row .ecm_label { flex-grow: 1; }
+
+/* Desktop: expanded */
+@media (min-width: 769px) {
+    .ecm_card { max-width: 620px; max-height: 68dvh; }
+    .ecm_layout { max-height: calc(68dvh - 120px); }
+    .ecm_acc_body { display: flex !important; flex-direction: column; gap: 6px; padding: 8px 0 12px; }
+    .ecm_acc_header {
+        cursor: default; pointer-events: none; padding: 10px 14px; margin-top: 14px;
+        background: rgba(0, 0, 0, 0.2); border-radius: 6px; border-bottom: none;
+        border-left: 4px solid var(--ec-accent, #43b581);
+        font-size: 1.1em; font-weight: 700; letter-spacing: 0.8px; color: var(--ec-accent, #43b581);
+    }
+    .ecm_acc_chevron { display: none; }
+    .ecm_section:not(:last-child) { border-bottom: 1px solid rgba(255, 255, 255, 0.07); padding-bottom: 14px; margin-bottom: 6px; }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    #ec_settings_modal { z-index: 200000 !important; padding: 8px !important; position: fixed !important; inset: 0 !important; }
+    #ec_settings_modal.ecm_visible { display: flex !important; opacity: 1 !important; pointer-events: all !important; }
+    .ecm_card { max-width: 100% !important; width: 100% !important; max-height: 90dvh !important; transform: none !important; }
+    .ecm_backdrop { position: fixed !important; inset: 0 !important; }
+    .ecm_sidebar { display: none; }
+    .ecm_layout { flex-direction: column; overflow-y: auto; overflow-x: hidden; max-height: calc(90dvh - 50px); }
+    .ecm_content { overflow-y: auto; padding: 10px 14px 60px; gap: 0; }
+    .ecm_acc_body[hidden] { display: none !important; }
+    .ecm_footer { position: sticky; bottom: 0; z-index: 10; background: var(--SmartThemeBlurTintColor, #2a2c31); }
+    #discordQuickSettings .ec_btn { min-width: 36px; min-height: 36px; }
+}
+
+/* Mobile — settings modal bottom sheet */
+@media (max-width: 600px) {
+    #ec_settings_modal { padding: 0; align-items: flex-end; }
+    .ecm_card { max-height: 92dvh; border-radius: 16px 16px 0 0; border-bottom: none; }
+    .ecm_header { border-radius: 16px 16px 0 0; }
+}
+
+/* ========================================= */
+/* SETTINGS PANEL CSS */
+/* ========================================= */
+.discord_settings {
+    --ec-s-bg: rgba(0, 0, 0, 0.12);
+    --ec-s-bg-hover: rgba(255, 255, 255, 0.04);
+    --ec-s-border: var(--ec-border, rgba(255, 255, 255, 0.12));
+    --ec-s-accent: var(--SmartThemeQuoteColor, var(--ec-accent, #43b581));
+    --ec-s-text: var(--SmartThemeBodyColor, var(--ec-text, #dcddde));
+    --ec-s-radius: 6px;
+    --ec-s-row-min: 44px;
+    --ec-s-gap: 8px;
+    --ec-s-font-sm: 0.8em;
+    --ec-s-font-xs: 0.75em;
+    --ec-s-opacity-dim: 0.65;
+}
+.ec-s-panel { box-sizing: border-box; width: 100%; max-width: 100%; overflow-x: hidden; padding-bottom: 4px; }
+.ec-s-description { margin-bottom: 12px; padding: 8px 12px; border-left: 3px solid var(--ec-s-accent); background: var(--ec-s-bg); border-radius: 0 var(--ec-s-radius) var(--ec-s-radius) 0; font-size: var(--ec-s-font-sm); opacity: 0.85; line-height: 1.5; }
+.ec-s-global-enable { margin-bottom: 12px; padding: 6px 4px; border-radius: var(--ec-s-radius); transition: background 0.15s; }
+@media (hover: hover) { .ec-s-global-enable:hover { background: var(--ec-s-bg-hover); } }
+
+.ec-s-section { border: 1px solid var(--ec-s-border); border-radius: var(--ec-s-radius); margin-bottom: 8px; overflow: hidden; }
+.ec-s-section-header {
+    appearance: none; -webkit-appearance: none; background: var(--ec-s-bg); border: none; border-radius: 0; outline: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    width: 100%; min-height: var(--ec-s-row-min); padding: 10px 12px; gap: var(--ec-s-gap);
+    color: var(--ec-s-accent); font-size: var(--ec-s-font-sm); font-family: inherit;
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; transition: background 0.15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ec-s-section-header:hover { background: var(--ec-s-bg-hover); } }
+.ec-s-section-title { display: flex; align-items: center; gap: 6px; flex: 1; text-align: left; }
+.ec-s-chevron { font-size: 0.9em; opacity: var(--ec-s-opacity-dim); transition: transform 0.25s ease, opacity 0.2s; flex-shrink: 0; }
+.ec-s-section-header[aria-expanded="true"] .ec-s-chevron { transform: rotate(180deg); opacity: 1; }
+.ec-s-section-body { padding: 10px 12px 12px; border-top: 1px solid var(--ec-s-border); display: flex; flex-direction: column; gap: 6px; }
+.ec-s-section-body[hidden] { display: none; }
+
+.ec-s-toggle-row {
+    display: flex; align-items: center; gap: 10px; min-height: var(--ec-s-row-min);
+    padding: 6px 8px; border-radius: var(--ec-s-radius); cursor: pointer;
+    font-size: 0.9em; color: var(--ec-s-text); transition: background 0.15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .ec-s-toggle-row:hover { background: var(--ec-s-bg-hover); } }
+.ec-s-radio-row { min-height: 36px; padding: 4px 8px; }
+.ec-s-toggle-row .checkbox, .ec-s-toggle-row .radio { flex-shrink: 0; width: 18px; height: 18px; cursor: pointer; }
+.ec-s-label-text { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.ec-s-label-bold { font-weight: bold; }
+
+.ec-s-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ec-s-gap, 8px); }
+.ec-s-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--ec-s-gap, 8px); }
+@media (max-width: 600px) { .ec-s-grid-2, .ec-s-grid-3 { grid-template-columns: 1fr; } }
+
+.ec-s-field-group { display: flex; flex-direction: column; gap: 4px; }
+.ec-s-field-label { display: flex; align-items: center; gap: 5px; font-size: var(--ec-s-font-sm); opacity: var(--ec-s-opacity-dim); user-select: none; }
+
+.discord_settings .ec-s-select,
+.discord_settings .ec-s-input {
+    width: 100%; box-sizing: border-box; font-size: 0.9em; min-height: 36px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2)) !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.35)) !important;
+    color: var(--SmartThemeBodyColor, #dcddde) !important;
+}
+@media (hover: hover) {
+    .discord_settings .ec-s-select:hover,
+    .discord_settings .ec-s-input:hover {
+        border-color: var(--SmartThemeQuoteColor, #43b581) !important;
+        /* Fallback for Chrome < 111 / Firefox < 113 that don't support color-mix() */
+        box-shadow: 0 0 0 2px rgba(67, 181, 129, 0.2) !important;
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--SmartThemeQuoteColor, #43b581) 20%, transparent) !important;
+    }
+}
+.discord_settings .ec-s-select:focus,
+.discord_settings .ec-s-input:focus {
+    border-color: var(--SmartThemeQuoteColor, #43b581) !important;
+    /* Fallback for Chrome < 111 / Firefox < 113 that don't support color-mix() */
+    box-shadow: 0 0 0 3px rgba(67, 181, 129, 0.3) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--SmartThemeQuoteColor, #43b581) 30%, transparent) !important;
+    outline: none !important;
+}
+.discord_settings .ec-s-input-num {
+    width: 80px; min-height: 36px; font-size: 0.9em; box-sizing: border-box;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2)) !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.35)) !important;
+    color: var(--SmartThemeBodyColor, #dcddde) !important;
+}
+@media (hover: hover) {
+    .discord_settings .ec-s-input-num:hover {
+        border-color: var(--SmartThemeQuoteColor, #43b581) !important;
+        /* Fallback for Chrome < 111 / Firefox < 113 that don't support color-mix() */
+        box-shadow: 0 0 0 2px rgba(67, 181, 129, 0.2) !important;
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--SmartThemeQuoteColor, #43b581) 20%, transparent) !important;
+    }
+}
+.discord_settings .ec-s-input-num:focus {
+    border-color: var(--SmartThemeQuoteColor, #43b581) !important;
+    /* Fallback for Chrome < 111 / Firefox < 113 that don't support color-mix() */
+    box-shadow: 0 0 0 3px rgba(67, 181, 129, 0.3) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--SmartThemeQuoteColor, #43b581) 30%, transparent) !important;
+    outline: none !important;
+}
+
+.ec-s-slider-row { display: flex; align-items: center; gap: 8px; }
+.ec-s-slider { flex: 1; min-width: 0; cursor: pointer; }
+.ec-s-slider-val { font-size: var(--ec-s-font-sm); opacity: var(--ec-s-opacity-dim); min-width: 36px; text-align: right; white-space: nowrap; }
+
+.ec-s-sub-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 3px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.08); border-radius: 0 var(--ec-s-radius) var(--ec-s-radius) 0; margin-top: 4px; }
+.ec-s-sub-panel--ollama { border-left-color: rgba(0, 255, 0, 0.35); }
+.ec-s-sub-panel--openai { border-left-color: rgba(0, 180, 255, 0.35); }
+.ec-s-sub-panel--profile { border-left-color: rgba(100, 150, 255, 0.35); }
+.ec-s-sub-panel[hidden] { display: none; }
+.ec-s-sub-panel-title { display: flex; align-items: center; gap: 6px; font-size: var(--ec-s-font-sm); font-weight: bold; opacity: 0.9; margin-bottom: 2px; }
+
+.ec-s-context-sub { margin-top: 4px; padding: 10px; border-left: 2px solid var(--ec-s-border); background: var(--ec-s-bg); border-radius: 0 var(--ec-s-radius) var(--ec-s-radius) 0; display: flex; flex-direction: column; gap: 2px; }
+.ec-s-context-sub-title { display: flex; align-items: center; gap: 6px; font-size: var(--ec-s-font-sm); font-weight: bold; opacity: 0.9; margin-bottom: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--ec-s-border); }
+.ec-s-sub-field { padding: 8px 8px 4px 12px; border-left: 2px solid var(--ec-s-border); margin-left: 8px; display: flex; flex-direction: column; gap: 8px; }
+.ec-s-sub-field[hidden] { display: none; }
+.ec-s-hint { font-size: var(--ec-s-font-xs); opacity: var(--ec-s-opacity-dim); line-height: 1.4; }
+.ec-s-hint--indent { padding-left: 12px; }
+.ec-s-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ec-s-btn-row .menu_button { flex: 1; min-width: 100px; justify-content: center; }
+.ec-s-version { text-align: center; font-size: var(--ec-s-font-xs); opacity: 0.45; font-family: monospace; margin-top: 4px; }
+.ec-s-color-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ec-s-color-input {
+    width: 48px; height: 36px; padding: 2px 3px; border-radius: 6px;
+    border: 1px solid var(--ec-s-border); background: transparent; cursor: pointer;
+    flex-shrink: 0; -webkit-appearance: none; appearance: none;
+}
+.ec-s-color-input::-webkit-color-swatch-wrapper { padding: 0; border-radius: 4px; }
+.ec-s-color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+.ec-s-color-input::-moz-color-swatch { border: none; border-radius: 4px; }
+.ec-s-inline-pair { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+@media (max-width: 480px) {
+    .discord_settings { --ec-s-gap: 6px; }
+    .ec-s-grid-2, .ec-s-grid-3 { grid-template-columns: 1fr; }
+    .ec-s-input-num { width: 100%; }
+    .ec-s-section-body { padding: 8px 8px 10px; }
+}
+
+/* ========================================= */
+/* STYLE EDITOR MODAL */
+/* ========================================= */
+.ec_modal_overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    /* backdrop-filter removed — expensive GPU operation */
+    z-index: 200010; display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s;
+    padding: 20px; overflow-y: auto;
+    width: 100vw; height: 100dvh;
+}
+.ec_modal_overlay.active { opacity: 1; visibility: visible; }
+.ec_modal_content {
+    background: var(--SmartThemeBlurTintColor, #1a1a2e);
+    border: 1px solid var(--SmartThemeBorderColor, #333);
+    border-radius: 12px; width: 90%; max-width: 900px; max-height: 85dvh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    transform: translateY(20px); transition: transform 0.2s; margin: auto; position: relative;
+}
+.ec_modal_overlay.active .ec_modal_content { transform: translateY(0); }
+.ec_modal_header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--SmartThemeBorderColor, #333); flex-shrink: 0; }
+.ec_modal_header h3 { margin: 0; display: flex; align-items: center; gap: 10px; color: var(--SmartThemeBodyColor, #eee); font-size: 1.1em; }
+.ec_modal_close { background: none; border: none; color: var(--SmartThemeBodyColor, #eee); font-size: 1.5em; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; padding: 4px 8px; min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
+@media (hover: hover) { .ec_modal_close:hover { opacity: 1; } }
+.ec_modal_body { display: flex; flex: 1; overflow: hidden; min-height: 400px; }
+.ec_style_sidebar { width: 220px; border-right: 1px solid var(--SmartThemeBorderColor, #333); display: flex; flex-direction: column; flex-shrink: 0; }
+.ec_style_sidebar_header { padding: 12px; border-bottom: 1px solid var(--SmartThemeBorderColor, #333); display: flex; gap: 8px; }
+.ec_style_sidebar_header button { flex: 1; padding: 8px; font-size: 0.85em; }
+.ec_style_list { flex: 1; overflow-y: auto; padding: 8px; }
+.ec_style_order_hint { padding: 6px 12px; font-size: 0.72em; opacity: 0.45; color: var(--SmartThemeBodyColor, #aaa); border-top: 1px solid rgba(255, 255, 255, 0.07); display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ec_style_item { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: var(--SmartThemeBodyColor, #ddd); transition: background 0.2s; margin-bottom: 4px; font-size: 0.9em; min-height: 40px; touch-action: manipulation; }
+@media (hover: hover) { .ec_style_item:hover { background: rgba(255, 255, 255, 0.1); } }
+.ec_style_item.active { background: rgba(255, 255, 255, 0.12); border-left: 3px solid var(--SmartThemeQuoteColor, #4a9); }
+.ec_drag_handle { cursor: grab; opacity: 0.35; transition: opacity 0.15s; flex-shrink: 0; display: flex; align-items: center; padding: 0 2px;
+    /* Required for pointer-event D&D on Android: prevents browser from claiming the
+       touch gesture as a page scroll before our pointerdown fires. */
+    touch-action: none;
+}
+@media (hover: hover) { .ec_style_item:hover .ec_drag_handle { opacity: 0.7; } }
+.ec_drag_handle:active { cursor: grabbing; opacity: 1; }
+.ec_style_item.builtin .ec_style_type_icon { color: var(--SmartThemeQuoteColor, #4a9); }
+.ec_style_item.custom .ec_style_type_icon { color: #f9a825; }
+.ec_style_item.ec_dragging { opacity: 0.4; background: rgba(255, 255, 255, 0.06); }
+.ec_style_item.ec_drag_over { background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 2px 0 var(--SmartThemeQuoteColor, #4a9); }
+.ec_style_main { flex: 1; display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
+.ec_style_name_row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+.ec_style_name_input { flex: 1; padding: 10px 14px; font-size: 1em; border: 1px solid var(--SmartThemeBorderColor, #444); border-radius: 6px; background: rgba(0, 0, 0, 0.2); color: var(--SmartThemeBodyColor, #eee); }
+.ec_style_textarea { flex: 1; width: 100%; padding: 14px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.9em; line-height: 1.5; border: 1px solid var(--SmartThemeBorderColor, #444); border-radius: 8px; background: rgba(0, 0, 0, 0.3); color: var(--SmartThemeBodyColor, #eee); resize: none; }
+.ec_style_textarea:focus { outline: none; border-color: var(--SmartThemeQuoteColor, #4a9); }
+.ec_modal_footer { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-top: 1px solid var(--SmartThemeBorderColor, #333); flex-shrink: 0; gap: 10px; }
+.ec_modal_footer_left { display: flex; gap: 8px; }
+.ec_modal_footer_right { display: flex; gap: 8px; }
+.ec_modal_footer button i { margin-right: 6px; }
+.ec_btn_danger { background: #c0392b !important; border-color: #a93226 !important; }
+.ec_btn_primary { background: var(--SmartThemeBlurTintColor) !important; border-color: var(--SmartThemeBorderColor) !important; color: var(--SmartThemeBodyColor) !important; font-weight: 600; }
+.ec_empty_state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--SmartThemeBodyColor, #888); opacity: 0.6; text-align: center; padding: 40px; }
+.ec_empty_state i { font-size: 3em; margin-bottom: 10px; }
+
+/* Template creator modal */
+.ec_template_creator { max-width: 650px !important; width: 90vw !important; }
+.ec_template_tabs { display: flex; border-bottom: 1px solid var(--ec-border); padding: 0 10px; background: rgba(0, 0, 0, 0.2); }
+.ec_tab_btn { background: none; border: none; color: var(--SmartThemeBodyColor, #ccc); padding: 12px 20px; cursor: pointer; font-size: 0.9em; border-bottom: 2px solid transparent; transition: all 0.2s; display: flex; align-items: center; gap: 8px; min-height: 44px; touch-action: manipulation; }
+@media (hover: hover) { .ec_tab_btn:hover { color: var(--ec-accent); background: rgba(255, 255, 255, 0.05); } }
+.ec_tab_btn.active { color: var(--ec-accent); border-bottom-color: var(--ec-accent); }
+.ec_template_body { padding: 15px 20px !important; overflow-y: auto; max-height: 60dvh; }
+.ec_tab_content { display: none; }
+.ec_tab_content.active { display: block; }
+.ec_form_group { margin-bottom: 15px; }
+.ec_form_group label { display: block; margin-bottom: 5px; font-weight: 500; color: var(--SmartThemeBodyColor, #ddd); font-size: 0.9em; }
+.ec_form_group input[type="text"], .ec_form_group select, .ec_form_group textarea { width: 100%; padding: 10px 12px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--ec-border); border-radius: 6px; color: var(--SmartThemeBodyColor, #fff); font-size: 0.95em; box-sizing: border-box; }
+.ec_form_group input[type="text"]:focus, .ec_form_group select:focus, .ec_form_group textarea:focus { outline: none; border-color: var(--ec-accent); }
+.ec_form_group textarea { resize: vertical; min-height: 60px; }
+.ec_form_group small { display: block; margin-top: 4px; color: var(--SmartThemeBodyColor, #888); opacity: 0.7; font-size: 0.8em; }
+.ec_form_row { display: flex; gap: 15px; }
+.ec_form_row .ec_form_group { flex: 1; }
+.ec_checkbox_row { display: flex; flex-wrap: wrap; gap: 15px; }
+.ec_checkbox_row label { display: flex; align-items: center; gap: 6px; font-weight: normal; cursor: pointer; font-size: 0.9em; min-height: 40px; }
+.ec_checkbox_row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ec-accent); }
+.ec_full_height textarea { min-height: 250px; }
+.ec_tab_content[data-tab="advanced"].active { display: flex; flex-direction: column; height: 100%; }
+.ec_tab_content[data-tab="advanced"] .ec_full_height { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.ec_tab_content[data-tab="advanced"] .ec_full_height textarea { flex: 1; min-height: 300px; resize: vertical; }
+.ec_label_row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.ec_label_row label { margin-bottom: 0; }
+.ec_prompt_actions { display: flex; gap: 6px; }
+.ec_small_btn { padding: 4px 10px !important; font-size: 0.8em !important; }
+.ec_small_btn i { margin-right: 4px; }
+#ec_tpl_custom_tone { display: none; }
+
+/* ========================================= */
+/* CONFIRMATION MODAL */
+/* ========================================= */
+.ec_confirm_modal_overlay {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; inset: 0;
+    z-index: 100020; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    /* backdrop-filter removed — expensive GPU operation */
+    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+    box-sizing: border-box; opacity: 0; transition: opacity 0.18s ease;
+}
+.ec_confirm_modal_overlay.ec_confirm_visible { opacity: 1; }
+.ec_confirm_modal_card {
+    background: linear-gradient(145deg, rgba(22, 23, 30, 0.96) 0%, rgba(14, 15, 20, 0.98) 100%);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.14));
+    border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    padding: 32px 28px 24px; width: 100%; max-width: 360px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    transform: translateY(12px) scale(0.97); transition: transform 0.18s ease;
+}
+.ec_confirm_modal_overlay.ec_confirm_visible .ec_confirm_modal_card { transform: translateY(0) scale(1); }
+.ec_confirm_modal_icon { width: 52px; height: 52px; border-radius: 50%; background: rgba(240, 100, 60, 0.12); border: 1px solid rgba(240, 100, 60, 0.3); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #f06430; flex-shrink: 0; }
+.ec_confirm_modal_message { font-size: 0.92em; color: var(--SmartThemeBodyColor, #dcddde); text-align: center; line-height: 1.5; opacity: 0.9; padding: 0 4px; }
+.ec_confirm_modal_actions { display: flex; gap: 10px; width: 100%; margin-top: 4px; }
+.ec_confirm_modal_btn { flex: 1; padding: 12px 16px; border-radius: 8px; font-size: 0.9em; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: filter 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; gap: 6px; outline: none; min-height: 44px; touch-action: manipulation; }
+.ec_confirm_modal_btn:active { transform: scale(0.97); }
+.ec_confirm_cancel { background: rgba(255, 255, 255, 0.06); color: var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.65)); border-color: rgba(255, 255, 255, 0.12); }
+@media (hover: hover) { .ec_confirm_cancel:hover { background: rgba(255, 255, 255, 0.10); color: rgba(255, 255, 255, 0.9); } }
+.ec_confirm_ok { background: rgba(220, 60, 40, 0.18); color: #ff6b5b; border-color: rgba(220, 60, 40, 0.5); }
+@media (hover: hover) { .ec_confirm_ok:hover { background: rgba(220, 60, 40, 0.28); border-color: rgba(220, 60, 40, 0.7); color: #ff8a7a; } }
+
+/* ========================================= */
+/* STYLE EDITOR BUTTONS */
+/* ========================================= */
+.ec_btn_new_style { background: rgba(67, 181, 129, 0.12) !important; border: 1px solid rgba(67, 181, 129, 0.4) !important; color: var(--SmartThemeQuoteColor, #43b581) !important; font-weight: 600 !important; display: flex !important; align-items: center !important; gap: 6px !important; padding: 8px 14px !important; border-radius: 6px !important; transition: background 0.2s, border-color 0.2s !important; white-space: nowrap !important; }
+.ec_btn_export { background: rgba(100, 160, 255, 0.1) !important; border: 1px solid rgba(100, 160, 255, 0.35) !important; color: rgba(140, 190, 255, 0.9) !important; }
+.ec_btn_cancel { background: rgba(255, 255, 255, 0.05) !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; color: rgba(255, 255, 255, 0.6) !important; }
+.ec_btn_save { background: rgba(67, 181, 129, 0.18) !important; border: 1px solid rgba(67, 181, 129, 0.5) !important; color: var(--SmartThemeQuoteColor, #43b581) !important; font-weight: 700 !important; }
+.ec_btn_create { background: linear-gradient(135deg, rgba(67, 181, 129, 0.2), rgba(100, 160, 255, 0.15)) !important; border: 1px solid rgba(67, 181, 129, 0.5) !important; color: var(--SmartThemeQuoteColor, #43b581) !important; font-weight: 700 !important; }
+
+/* ========================================= */
+/* NUMBER INPUT SPINNER — тема-независимый   */
+/* ========================================= */
+.discord_settings .ec-s-input-num::-webkit-inner-spin-button,
+.discord_settings .ec-s-input-num::-webkit-outer-spin-button {
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+/* ========================================= */
+/* ST MODALS FIX */
+/* ========================================= */
+.popup, #dialogue_popup, #shadow_popup { z-index: 200005 !important; }
+
+/* ST left nav drawers must stay above our ec_left panel (z-index: 200001) */
+#leftNavHolder, #left-nav-panel { z-index: 200002 !important; }
+
+/* ========================================= */
+/* POST INDICATOR & POST NAVIGATOR           */
+/* ========================================= */
+
+/* Pill in the header — sits between left and right sections */
+.ec_post_indicator {
+    flex: 1;
+    text-align: center;
+    font-size: 0.72em;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+    letter-spacing: 0.2px;
+    pointer-events: none;
+    user-select: none;
+    transition: color 0.2s;
+}
+.ec_post_indicator.ec_post_indicator_pinned {
+    color: var(--ec-accent, #43b581);
+}
+/* On compact/mobile — hide the pill to save space */
+#discordQuickSettings.ec_compact .ec_post_indicator { display: none !important; }
+@media (max-width: 480px) { .ec_post_indicator { display: none !important; } }
+
+/* Select dropdown in QS Post Navigator */
+.ec_post_nav_select {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--ec-border, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+    color: var(--ec-text, #dcddde);
+    font-size: 0.82em;
+    padding: 6px 8px;
+    cursor: pointer;
+    outline: none;
+    min-height: 36px;
+    transition: border-color 0.15s;
+    margin-bottom: 2px;
+}
+.ec_post_nav_select:focus {
+    border-color: var(--ec-accent, #43b581);
+}
+
+/* Regenerate chip (danger accent) */
+.ec_of_danger_chip {
+    color: rgba(240, 120, 80, 0.9) !important;
+    border-color: rgba(240, 120, 80, 0.3) !important;
+}
+@media (hover: hover) {
+    .ec_of_danger_chip:hover {
+        background: rgba(240, 100, 60, 0.12) !important;
+        border-color: rgba(240, 120, 80, 0.5) !important;
+        color: rgba(255, 140, 100, 1) !important;
+    }
+}
+
+/* Export JPG chip — green accent */
+#ec_qs_nav_export {
+    color: rgba(67, 181, 129, 0.9) !important;
+    border-color: rgba(67, 181, 129, 0.3) !important;
+}
+@media (hover: hover) {
+    #ec_qs_nav_export:hover {
+        background: rgba(67, 181, 129, 0.12) !important;
+        border-color: rgba(67, 181, 129, 0.5) !important;
+        color: rgba(87, 242, 135, 1) !important;
+    }
+}
+
+/* ========================================================= */
+/* STYLE: REALDISCORD                                         */
+/* Real Discord dark theme — replies, reactions, gradients   */
+/* ========================================================= */
+
+/* Override base panel background for full Discord feel */
+#discordBar[data-style="realdiscord"] {
+    background: #0d0e10 !important;
+    border: 1px solid #000 !important;
+    font-family: 'Inter', 'Noto Sans', 'Segoe UI', system-ui, -apple-system, sans-serif !important;
+}
+
+#discordBar[data-style="realdiscord"] #discordContent {
+    background: #111214;
+}
+
+/* Base message reset */
+#discordBar[data-style="realdiscord"] .discord_message.rd_message {
+    display: block !important;
+    float: none !important;
+    padding: 2px 16px 2px 14px !important; /* 14px left = compensate for 2px border-left */
+    margin: 0 !important;
+    background: rgba(255, 255, 255, 0.015);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-left: 2px solid transparent;
+    border-radius: 0 2px 2px 0;
+    transition: background 0.1s ease, border-left-color 0.1s ease;
+    overflow: visible !important;
+}
+
+/* No separator after last message */
+#discordBar[data-style="realdiscord"] .discord_message.rd_message:last-child {
+    border-bottom: none;
+}
+
+/* Hover — only on pointer devices (no sticky hover on touch/Android/iOS) */
+@media (hover: hover) {
+    #discordBar[data-style="realdiscord"] .discord_message.rd_message:hover {
+        background: rgba(255, 255, 255, 0.03) !important;
+        /* border-left intentionally NOT changed on hover — avoids coloured stripe */
+    }
+}
+
+/* No avatars in realdiscord — hide any that may render */
+#discordBar[data-style="realdiscord"] .discord_avatar,
+#discordBar[data-style="realdiscord"] .rd_avatar {
+    display: none !important;
+}
+
+/* Main row — avatar + body */
+#discordBar[data-style="realdiscord"] .rd_main_row {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 0;
+}
+
+/* Body */
+#discordBar[data-style="realdiscord"] .discord_message.rd_message .discord_body {
+    display: block !important;
+    flex: 1;
+    min-width: 0;
+    overflow: visible !important;
+}
+
+/* Username — gradient via inline style from JS, CSS must NOT override background */
+#discordBar[data-style="realdiscord"] .rd_username {
+    font-size: 1em !important;
+    font-weight: 600 !important;
+    line-height: 1.375em;
+    cursor: pointer;
+    /* Do NOT set background here — inline gradient style from JS handles it */
+}
+
+#discordBar[data-style="realdiscord"] .rd_username:hover {
+    text-decoration: underline;
+}
+
+/* Content text */
+#discordBar[data-style="realdiscord"] .discord_message.rd_message .discord_content {
+    color: #e0e1e5 !important;
+    font-size: 0.95em !important;
+    line-height: 1.5em !important;
+    margin-top: 2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: block !important;
+    margin-left: 0 !important;
+}
+
+/* ── REPLY BAR ────────────────────────────────────────────── */
+#discordBar[data-style="realdiscord"] .rd_reply_bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 2px 28px; /* no avatar — just left indent for reply line */
+    margin-bottom: 2px;
+    position: relative;
+}
+
+/* The curved line — left indent, no avatar */
+#discordBar[data-style="realdiscord"] .rd_reply_line {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 14px;
+    height: 10px;
+    border-left: 2px solid #2e3035;
+    border-top: 2px solid #2e3035;
+    border-top-left-radius: 5px;
+    transform: translateY(-50%);
+    flex-shrink: 0;
+}
+
+/* Mini avatar in reply */
+#discordBar[data-style="realdiscord"] .rd_reply_avatar {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50%;
+    font-size: 9px !important;
+    font-weight: 700;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+#discordBar[data-style="realdiscord"] .rd_reply_name {
+    font-size: 0.8em;
+    font-weight: 500;
+    opacity: 0.9;
+    flex-shrink: 0;
+}
+
+#discordBar[data-style="realdiscord"] .rd_reply_quote {
+    font-size: 0.8em;
+    color: #5c6068;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+}
+
+/* ── REACTIONS ────────────────────────────────────────────── */
+#discordBar[data-style="realdiscord"] .rd_reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+#discordBar[data-style="realdiscord"] .rd_reaction {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px 2px 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    user-select: none;
+}
+
+#discordBar[data-style="realdiscord"] .rd_reaction:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+#discordBar[data-style="realdiscord"] .rd_reaction_emoji {
+    font-size: 1.05em;
+    line-height: 1;
+}
+
+#discordBar[data-style="realdiscord"] .rd_reaction_count {
+    font-size: 0.78em;
+    font-weight: 500;
+    color: #b9bbbe;
+    line-height: 1;
+}
+
+/* ── GROUP SPACING — consecutive messages by same user ─────── */
+/* First message in a group gets full top padding              */
+#discordBar[data-style="realdiscord"] .discord_message.rd_message:first-child,
+#discordBar[data-style="realdiscord"] .discord_message.rd_message {
+    padding-top: 6px !important;
+    padding-bottom: 4px !important;
+}
+
+/* ── SIDE PANEL OVERRIDES — left/right positions ───────────── */
+#discordBar.ec_left[data-style="realdiscord"] .discord_message.rd_message,
+#discordBar.ec_right[data-style="realdiscord"] .discord_message.rd_message {
+    display: block !important;
+    overflow: visible !important;
+    padding: 6px 8px !important;
+}
+
+#discordBar.ec_left[data-style="realdiscord"] .rd_main_row,
+#discordBar.ec_right[data-style="realdiscord"] .rd_main_row {
+    display: flex !important;
+}
+
+#discordBar.ec_left[data-style="realdiscord"] .rd_reply_bar,
+#discordBar.ec_right[data-style="realdiscord"] .rd_reply_bar {
+    padding-left: 42px;
+}
+
+#discordBar.ec_left[data-style="realdiscord"] .rd_reply_line,
+#discordBar.ec_right[data-style="realdiscord"] .rd_reply_line {
+    left: 20px;
+}
+
+#discordBar.ec_left[data-style="realdiscord"] .rd_reply_quote,
+#discordBar.ec_right[data-style="realdiscord"] .rd_reply_quote {
+    max-width: 120px;
+}
+
+/* ── SCROLLBAR — ultra dark ──────────────────────────────── */
+#discordBar[data-style="realdiscord"] #discordContent::-webkit-scrollbar {
+    width: 6px;
+}
+#discordBar[data-style="realdiscord"] #discordContent::-webkit-scrollbar-track {
+    background: transparent;
+}
+#discordBar[data-style="realdiscord"] #discordContent::-webkit-scrollbar-thumb {
+    background: #1e2024;
+    border-radius: 3px;
+}
+#discordBar[data-style="realdiscord"] #discordContent::-webkit-scrollbar-thumb:hover {
+    background: #2a2d32;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   dvh FALLBACKS — Chrome < 108 / Firefox < 101 / old WebView
+   These units aren't supported in older Android browsers.
+   The fallback uses vh which is identical when no virtual
+   keyboard is shown (the common case in Termux/ST).
+   ═══════════════════════════════════════════════════════════ */
+
+/* Left / Right panel full height */
+#discordBar.ec_left,
+#discordBar.ec_right {
+    height: calc(100vh - var(--topBarBlockSize));
+}
+@supports (height: 100dvh) {
+    #discordBar.ec_left,
+    #discordBar.ec_right {
+        height: calc(100dvh - var(--topBarBlockSize)) !important;
+    }
+}
+
+/* Collapsed left/right */
+#discordBar.ec_left.ec_collapsed,
+#discordBar.ec_right.ec_collapsed {
+    height: calc(100vh - var(--topBarBlockSize)) !important;
+}
+@supports (height: 100dvh) {
+    #discordBar.ec_left.ec_collapsed,
+    #discordBar.ec_right.ec_collapsed {
+        height: calc(100dvh - var(--topBarBlockSize)) !important;
+    }
+}
+
+/* Overflow QS menu max-height */
+.ec_overflow_menu {
+    max-height: 75vh;
+}
+@supports (max-height: 75dvh) {
+    .ec_overflow_menu {
+        max-height: 75dvh;
+    }
+}
+
+/* Settings modal card */
+.ecm_card {
+    max-height: 90vh;
+}
+@supports (max-height: 90dvh) {
+    .ecm_card {
+        max-height: 90dvh;
+    }
+}
+
+/* Style editor modal overlay */
+.ec_modal_overlay {
+    height: 100vh;
+}
+@supports (height: 100dvh) {
+    .ec_modal_overlay {
+        height: 100dvh;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE / TERMUX  (≤ 768px)
+   - Resize handle hidden: drag-to-resize doesn't work on touch
+   - Buttons enlarged for comfortable tap targets
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+    /* Hide resize handle — mobile uses fixed bottom layout only */
+    #discordBar .ec_resize_handle {
+        display: none !important;
+    }
+    /* Remove the top padding that was reserved for the handle */
+    #discordBar.ec_bottom { padding-top: 0 !important; }
+
+    /* Header buttons — +4px size, minimum 36px tap target */
+    #discordQuickSettings .ec_btn,
+    #discordQuickSettings .ec_power_btn,
+    #discordQuickSettings .ec_collapse_btn {
+        font-size: 17px !important;
+        min-width: 36px !important;
+        min-height: 36px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Post indicator pill */
+    .ec_post_indicator {
+        font-size: 0.8em !important;
+        padding: 2px 8px !important;
+    }
+
+    /* QS accordion toggle chips */
+    .ec_qs_chip,
+    .ec_danger_chip,
+    .ec_export_chip {
+        font-size: 0.82em !important;
+        padding: 5px 10px !important;
+        min-height: 32px !important;
+    }
+
+    /* Navigator select */
+    #ec_qs_nav_select {
+        font-size: 0.82em !important;
+        padding: 5px 8px !important;
+        min-height: 32px !important;
+    }
+}
+
+/* =========================================
+   PROMPT CUSTOMIZER
+   ========================================= */
+
+/* Mode toggle row */
+.ec-prompt-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 8px;
+    border: 1px solid var(--ec-s-border, rgba(255,255,255,0.1));
+}
+
+.ec-prompt-mode-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    font-weight: 500;
+    transition: color 0.2s;
+    user-select: none;
+}
+.ec-prompt-mode-label.ec-prompt-mode-active {
+    color: var(--ec-accent, #43b581);
+    font-weight: 700;
+}
+
+/* Custom toggle switch */
+.ec-prompt-toggle-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.ec-prompt-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+.ec-prompt-toggle-track {
+    display: inline-block;
+    width: 38px;
+    height: 20px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    position: relative;
+    transition: background 0.25s;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+.ec-prompt-toggle-input:checked ~ .ec-prompt-toggle-track {
+    background: var(--ec-accent, #43b581);
+    border-color: var(--ec-accent, #43b581);
+}
+.ec-prompt-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+.ec-prompt-toggle-input:checked ~ .ec-prompt-toggle-track .ec-prompt-toggle-thumb {
+    transform: translateX(18px);
+}
+
+/* Prompt section blocks */
+.ec-prompt-block {
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.ec-prompt-block-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 6px 10px;
+    color: rgba(255,255,255,0.55);
+    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    user-select: none;
+}
+
+.ec-prompt-block-body {
+    padding: 8px 10px;
+}
+
+/* Read-only blocks */
+.ec-prompt-block--readonly {
+    border-color: rgba(255,255,255,0.07);
+    opacity: 0.8;
+}
+.ec-prompt-block--readonly .ec-prompt-block-title {
+    background: rgba(255,255,255,0.03);
+}
+.ec-prompt-block-text {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: rgba(255,255,255,0.5);
+}
+.ec-prompt-block-text code {
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10.5px;
+    font-family: monospace;
+    color: rgba(255,255,255,0.75);
+}
+
+/* Editable blocks */
+.ec-prompt-block--editable {
+    border-color: rgba(255,255,255,0.12);
+}
+.ec-prompt-block--editable .ec-prompt-block-title {
+    background: rgba(67, 181, 129, 0.08);
+    color: rgba(255,255,255,0.65);
+    border-bottom-color: rgba(67, 181, 129, 0.15);
+}
+
+.ec-prompt-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    color: var(--SmartThemeBodyColor, #dcddde);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 7px 9px;
+    resize: vertical;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    outline: none;
+}
+.ec-prompt-textarea:focus {
+    border-color: var(--ec-accent, #43b581);
+    background: rgba(0,0,0,0.3);
+}
+.ec-prompt-textarea::placeholder {
+    color: rgba(255,255,255,0.25);
+    font-style: italic;
+}
+
+/* ========================================= */
+/* Position: POPOUT                          */
+/* Floating panel — drag anywhere, resize   */
+/* ========================================= */
+#discordBar.ec_popout {
+    position: fixed;
+    z-index: 200010;
+    /* Default position: centered above send bar */
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    top: auto;
+    right: auto;
+    width: 360px;
+    min-width: 240px;
+    max-width: calc(100vw - 20px);
+    height: 320px;
+    min-height: 120px;
+    max-height: 85dvh;
+    border-radius: var(--ec-radius);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.06) inset;
+}
+
+#discordBar.ec_popout #discordQuickSettings {
+    cursor: grab;
+    border-radius: var(--ec-radius) var(--ec-radius) 0 0;
+}
+#discordBar.ec_popout #discordQuickSettings:active {
+    cursor: grabbing;
+}
+
+#discordBar.ec_popout #discordContent {
+    flex: 1;
+    min-height: 0;
+    height: auto !important;
+    overflow-y: auto;
+}
+
+#discordBar.ec_popout .ec_resize_handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: se-resize;
+    background: none;
+    border-radius: 0 0 var(--ec-radius) 0;
+    top: auto;
+    left: auto;
+}
+#discordBar.ec_popout .ec_resize_handle::before {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid rgba(255, 255, 255, 0.25);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 0 0 2px 0;
+    background: none;
+}
+#discordBar.ec_popout .ec_resize_handle:hover::before,
+#discordBar.ec_popout .ec_resize_handle.resizing::before {
+    border-right-color: var(--ec-accent);
+    border-bottom-color: var(--ec-accent);
+    background: none;
+}
+
+#discordBar.ec_popout.ec_collapsed {
+    height: auto !important;
+    min-height: 0 !important;
+}
+#discordBar.ec_popout.ec_collapsed #discordContent {
+    display: none !important;
+}
+
+/* Mobile: narrower default, keep centered */
+@media (max-width: 768px) {
+    #discordBar.ec_popout {
+        width: min(360px, calc(100vw - 20px));
+    }
+}
+
+/* =========================================
+   ST CHARACTER CARD (rightNavHolder) — always above our panel
+   rightNavHolder / right-nav-panel open with display:flex at a high z-index.
+   We must NOT cover them. z-index 200002 > our panel's 200001.
+   ========================================= */
+#rightNavHolder,
+#right-nav-panel {
+    z-index: 200002 !important;
+}

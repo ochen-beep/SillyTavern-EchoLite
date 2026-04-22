@@ -1,379 +1,63 @@
+# EchoLite
 
-# 🗣️ EchoChamber for SillyTavern
+**EchoLite** — оптимизированный форк расширения [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber) для SillyTavern.
 
-> **Bring your stories and conversations to life with a dynamic, AI-powered audience.**
-
-## 🆕 What's New
-
-### ***v5.0.0***
-* Chat Participation: You can now send messages and chat with others. Supports @mentions and comments in general. Set your username, choose an avatar color, and how many respond to you. Thanks to RetiredHippie for getting this feature started.
-* Live icon is now clickable, allowing you to quickly enable/disable Livestream. It turns orange and pulses to indicate it is processing in the background, then turns red when done and remains Live.
-* New chat style: Dark Roast. For when you want comedians to roast your story or roleplay.
-* Fancy new settings menu, giving you quick access to all EchoChamber settings and options.
-* Pop-out floating panel: now you can create a floating EchoChamber and resize it however you like and place it anywhere in SillyTavern. It remembers the position and size, even after restarting ST.
-* Drag and reorder chat styles in any order you'd like.
-* Mobile: When minimized, the entire bar can be tapped to restore EchoChamber.
-* Narrator-based chat styles like Ava/Kai (NSFW) and HypeBot continue to respond and react when Livestream is enabled.
-* Miscellaneous visual improvements and bedazzling.
-
-Bugs/Issues Fixed:
- 
- * World Info setting token count too low, now set to 0 to use ST's max context and you can set it to any amount manually
- * EchoChamber erroneously triggering and processing when a very slow or unresponsive LLM is used
- * Style Manager not parsing and understanding {{user}} and {{char}}
-
-### ***v4.2.1***
-- **General fixes**: Stopped generation on style change, fixed the limited chat history (it was getting trimmed)
-- **Proper structure:** Fixed the structure of generation calls
-
-### ***v4.2.0***
-- **Pop-out window**: Open the chat in a separate window to move to another screen
-- **Improved panel controls**: Power button now truly enables/disables the extension (hides panel AND stops generation). Separate collapse arrow for just hiding the panel
-- **Include: Summary, World Info, Persona/Character**: Option to include more context to EchoChamber (thanks to leDissolution!)
-- **Style dropdown fix**: Menu now opens upward when panel is at bottom position
-- **Livestream resume**: Messages continue rolling after page refresh
-
-![Version](https://img.shields.io/badge/SillyTavern-v1.12%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-
-**EchoChamber** is a powerful extension for [SillyTavern](https://github.com/SillyTavern/SillyTavern) that generates a live reaction feed alongside your story. Whether it's a salt-fueled Discord chat, a viral Twitter feed, dramatic breaking news, or a sarcastic MST3K roasting session—EchoChamber immerses you in the world with AI-generated audience reactions.
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/12f3590c-24a8-44c2-b1a9-885b9497d88c" alt="EchoChamber Hero" width="100%">
-  <br>
-  <sub><em>EchoChamber panel on the right side with Discord/Twitch style reactions</em></sub>
-</p>
+Генерирует фейковый чат (зрители / комментарии), реагирующий на текущий диалог персонажей.
 
 ---
 
-## ✨ Feature Highlights
+## Изменения по сравнению с оригиналом
 
-| Feature | Description |
-|---------|-------------|
-| 🎭 **11+ Chat Styles** | Discord/Twitch, Twitter/X, Breaking News, MST3K, AO3/Wattpad, Dark Roast, Doomscrollers, and more |
-| 🔌 **Flexible Backends** | Use your existing SillyTavern connection, or connect to Ollama, KoboldCPP, LM Studio, vLLM |
-| 📍 **5 Panel Positions** | Place the feed at the Bottom, Top, Left, or Right of your chat or choose a pop-out floating panel |
-| 💬 **Chat Participation** | Chat with commenters with @mention support |
-| 🔴 **Livestream** | Turn EchoChamber into a live chatroom |
-| ⚡ **Quick Controls** | Instantly switch styles, adjust user count, and regenerate from the panel header |
-| 🎨 **Theme-Aware** | Automatically inherits your SillyTavern theme colors |
-| ✏️ **Style Manager** | Create, edit, import, and export custom chat styles |
-| 🔤 **Markdown Support** | Full support for **bold**, *italics*, <u>underline</u>, and `code` in reactions |
-
----
-
-## 📸 Style Showcase
-
-Experience how EchoChamber reacts to your story with these built-in styles:
-
-### 💬 Social Media & Live Chat
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>🎮 Discord / Twitch</b><br><i>High-energy slang, emotes, and hype</i></td>
-    <td width="50%" align="center"><b>🐦 Twitter / X</b><br><i>Viral threads, hot takes, and hashtags</i></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/6cf79997-eab2-4fc5-b9b8-ba38673d4fd0" width="100%"/></td>
-    <td><img src="https://github.com/user-attachments/assets/2a065b2d-30b1-4c2b-a951-2f89154c84d0" width="100%"/></td>
-  </tr>
-</table>
-
-### 📺 Dramatic & Commentary
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>📢 Breaking News</b><br><i>Dramatic ticker-style headlines</i></td>
-    <td width="50%" align="center"><b>🍿 Mystery Science Theater 3000</b><br><i>Sarcastic roasting and dry wit</i></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/e8938d3b-b387-44a5-a4a4-a22e8908ddf8" width="100%"/></td>
-    <td><img src="https://github.com/user-attachments/assets/c1ebbe45-3319-42e3-9a4f-1c80726c1efc" width="100%"/></td>
-  </tr>
-</table>
-
-<details>
-<summary><strong>👀 Click to see more styles (Thoughtful, Doomscrollers, Dumb & Dumber)</strong></summary>
-<br>
-<table>
-  <tr>
-    <td align="center"><b>🧠 Thoughtful Analysis</b><br><i>Literate, philosophical discussions</i></td>
-    <td align="center"><b>🤪 Dumb & Dumber</b><br><i>Hilariously wrong interpretations</i></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/e82fc293-cfda-497a-8781-c18591f32875" width="100%"/></td>
-    <td><img src="https://github.com/user-attachments/assets/6b3607fb-e16b-4172-9b10-b4a3e9057c32" width="100%"/></td>
-  </tr>
-  <tr>
-    <td align="center"><b>💀 Doomscrollers</b><br><i>Existential dread and gallows humor</i></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/71d2cdc7-0256-458e-a70f-d6c97fb68f15" width="100%"/></td>
-  </tr>
-</table>
-</details>
-
-<details>
-<summary><strong>🔞 NSFW / Erotic Styles (Adult Content - Click to Expand)</strong></summary>
-<br>
-<blockquote>
-  <b>⚠️ Warning:</b> These styles contain explicit sexual content. Ava (Female) and Kai (Male) are provocative narrator personas.
-</blockquote>
-<table>
-  <tr>
-    <td align="center"><b>Ava NSFW</b></td>
-    <td align="center"><b>Kai NSFW</b></td>
-  </tr>
-  <tr>
-    <td><img src="https://github.com/user-attachments/assets/1c16d0fb-7164-4304-ba9c-a5996caf0263" alt="ava-nsfw" width="100%"/></td>
-    <td><img src="https://github.com/user-attachments/assets/c8bd5737-d761-45a9-b995-5e95cb80fd20" alt="kai-nsfw" width="100%"/></td>
-  </tr>
-</table>
-</details>
+| Функция | EchoChamber | EchoLite |
+|---|---|---|
+| Livestream режим | ✅ | ❌ удалён |
+| Pop-out окно | ✅ | ❌ удалён |
+| 12 встроенных стилей | ✅ | 2 (Discord/Twitch + TikTok/Twitter) |
+| i18n (ru-ru) | ❌ | ✅ встроен в JS |
+| Мобильный фикс ST input | ❌ | ✅ `body.ec-bottom-active` |
+| 100dvh | ❌ | ✅ |
+| Touch-targets ≥44px | частично | ✅ |
+| Compact-mode header | ✅ | ✅ сохранён |
+| Override Max Tokens | ✅ | ✅ |
 
 ---
 
-## 🖼️ Panel Positions
+## Установка
 
-EchoChamber adapts to your preferred layout. Position the reaction panel anywhere:
-
-| Position | Best For |
-|----------|----------|
-| **Bottom** | Default, flows below chat input |
-| **Top** | Fixed header above conversation |
-| **Left** | Side panel, great for wide monitors |
-| **Right** | Side panel, immersive reading experience |
-| **Pop Out** | Floating panel, can be dragged anywhere and resized |
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/96ca5e06-7668-4666-bf22-8e73283f6cfd" alt="Top position with visual novel mode" width="90%">
-  <br>
-  <sub><em>Top position with Visual Novel mode and custom background</em></sub>
-</p>
-
----
-
-## 🛠️ Installation
-
-1. Open SillyTavern and click the **Extensions** button (🧩 puzzle piece icon)
-2. Select **Install Extension**
-3. Paste this URL:
+1. Скопировать папку `SillyTavern-EchoLite` в:
    ```
-   https://github.com/mattjaybe/SillyTavern-EchoChamber
+   SillyTavern/public/scripts/extensions/third-party/
    ```
-4. Click **Install** and refresh SillyTavern
+2. Перезапустить SillyTavern
+3. Включить в Extensions → EchoLite
 
 ---
 
-## ⚙️ Configuration
+## Использование
 
-### Settings Modal
-
-Quickly access all EchoChamber settings and customize to your preferences:
-
-<img width="350" alt="EchoChamber Settings" src="https://github.com/user-attachments/assets/36ea287d-ef1c-473d-b55b-57899b63915d" />
-
-
-### Settings Panel
-
-Access EchoChamber settings from the Extensions panel:
-
-<img src="https://github.com/user-attachments/assets/2e77ba7b-7a7c-4e97-80ce-75774e32804d" alt="Settings Panel" width="350">
-
-### Generation Engine Options
-
-| Engine | Description |
-|--------|-------------|
-| **Connection Profile** ⭐ | Use your existing SillyTavern connection profiles (Recommended) |
-| **Ollama** | Connect directly to local Ollama instance |
-| **OpenAI Compatible** | Works with KoboldCPP, LM Studio, vLLM, TabbyAPI, etc. |
-
-> 💡 **Tip:** Using **Connection Profile** is the easiest setup—it uses your existing SillyTavern API configuration with no extra setup needed.
+1. Включи **Enable EchoLite** в настройках расширения
+2. Нажми кнопку питания ⏻ на панели чата
+3. Чат автоматически генерируется после каждого сообщения (если включён Auto-update)
 
 ---
 
-## 🎨 Style Manager
+## Структура файлов
 
-Create, edit, and share custom chat styles with the powerful built-in Style Editor. Drag and reorder chat styles in any order you like.
-
-### Style Editor
-
-Click **Manage** in the Style Manager section to open the full editor:
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/102f6d36-9102-43c0-b5ed-5d5398b2c5d0" alt="Style Editor" width="700">
-  <br>
-  <sub><em>Edit any style's prompt template, export styles, or create new ones</em></sub>
-</p>
-
-**Features:**
-- **Left sidebar** — Browse all built-in and custom styles
-- **Prompt editor** — Full control over the style's system prompt
-- **Export** — Save styles as `.md` files to share with others
-- **Delete** — Remove custom styles (built-in styles can be hidden)
-
-### Creating New Styles
-
-Click **+ New** to create a custom style. Choose between two creation modes:
-
-<table>
-  <tr>
-    <td width="50%" align="center"><b>✨ Easy Mode</b><br><i>Guided form-based creation</i></td>
-    <td width="50%" align="center"><b>⚡ Advanced Mode</b><br><i>Direct prompt editing</i></td>
-  </tr>
-  <tr>
-    <td valign="top"><img src="https://github.com/user-attachments/assets/211e8c0f-27e1-4944-8540-1ddefde7e509" width="100%"/></td>
-    <td valign="top"><img src="https://github.com/user-attachments/assets/29b50e1c-abc2-4bf3-b028-c9db2592ef37" width="100%"/></td>
-  </tr>
-</table>
-
-#### Easy Mode Fields
-
-| Field | Description |
-|-------|-------------|
-| **Style Name** | Display name for your style |
-| **Style Type** | Chat (multiple users) or Narrator (single voice) |
-| **Output Format** | Message structure, e.g., `username: message` |
-| **Identity/Setting** | Who are the participants? What's the context? |
-| **Personality Guidelines** | Tone, vocabulary, and behavior |
-| **Tone** | Overall mood and energy level |
-
-#### Advanced Mode
-
-For full control, switch to **Advanced** mode to directly edit the system prompt. This is ideal for:
-- Porting existing prompts from other tools
-- Fine-tuning complex style behaviors
-- Creating narrator-style single-voice reactions
-
-### Import & Export
-
-- **Import** — Click **Import** in settings to load `.md` style files
-- **Export** — Click **Export** in the Style Editor to share your creations
-
----
-
-## 🎯 Quick Controls
-
-The panel header provides instant access to common actions:
-
-| Icon | Action |
-|------|--------|
-| Power | Toggle EchoChamber on/off |
-| Collapse | Collapse EchoChamber into a small bar |
-| Refresh | Regenerate reactions |
-| Layout | Change panel position |
-| Users | Adjust user count |
-| Font | Change text size |
-| Clear | Clear chat and cache |
-| Settings | Quick access to all EchoChamber settings |
-
----
-
-## 🔒 Requirements
-
-- **SillyTavern:** Version 1.12.0 or higher
-- **Backend:** Any of the following:
-  - Your existing SillyTavern Chat Completion API
-  - (Optional) Ollama (local)
-  - (Optional) OpenAI-compatible API (KoboldCPP, LM Studio, vLLM, etc.)
-
----
-
-## 🌟 Extras
-
-### 🎨 EyeCare Theme
-
-The screenshots use a custom high-contrast theme optimized for readability. Copy the JSON below and save as a `.json` file to import into SillyTavern:
-
-<details>
-<summary><strong>Click to view Theme JSON</strong></summary>
-
-```json
-{
-    "name": "EyeCare",
-    "blur_strength": 0,
-    "main_text_color": "rgba(230, 240, 255, 1)",
-    "italics_text_color": "rgba(150, 220, 255, 1)",
-    "underline_text_color": "rgba(255, 200, 100, 1)",
-    "quote_text_color": "rgba(180, 255, 180, 1)",
-    "blur_tint_color": "rgba(15, 20, 28, 1)",
-    "chat_tint_color": "rgba(15, 20, 28, 1)",
-    "user_mes_blur_tint_color": "rgba(22, 28, 38, 1)",
-    "bot_mes_blur_tint_color": "rgba(18, 24, 32, 1)",
-    "shadow_color": "rgba(0, 0, 0, 1)",
-    "shadow_width": 0,
-    "border_color": "rgba(70, 100, 140, 1)",
-    "font_scale": 1,
-    "fast_ui_mode": true,
-    "waifuMode": false,
-    "avatar_style": 2,
-    "chat_display": 1,
-    "toastr_position": "toast-top-right",
-    "noShadows": true,
-    "chat_width": 50,
-    "timer_enabled": false,
-    "timestamps_enabled": true,
-    "timestamp_model_icon": true,
-    "mesIDDisplay_enabled": false,
-    "hideChatAvatars_enabled": false,
-    "message_token_count_enabled": false,
-    "expand_message_actions": true,
-    "enableZenSliders": false,
-    "enableLabMode": false,
-    "hotswap_enabled": false,
-    "custom_css": "",
-    "bogus_folders": false,
-    "zoomed_avatar_magnification": false,
-    "reduced_motion": true,
-    "compact_input_area": false,
-    "show_swipe_num_all_messages": false,
-    "click_to_edit": false,
-    "media_display": "list"
-}
 ```
-</details>
-
-### 🎙️ Featured Scenario: Real Talk Podcast
-
-The reactions in the screenshots are based on this original character card. Use it to test EchoChamber:
-
-<table>
-  <tr>
-    <td width="35%" valign="top">
-      <img src="https://github.com/user-attachments/assets/beee7c3e-b40b-4f2d-a857-79329ab7038b" width="100%" alt="Real Talk Podcast Card" />
-      <p align="center"><sub><em>Right-click & Save to import</em></sub></p>
-    </td>
-    <td width="65%" valign="top">
-      <strong>The Story:</strong>
-      <blockquote>
-        Victoria Cross, 38, built her podcast empire dissecting male mediocrity and modern dating's failures—until Daniel, 18, calls in and systematically dismantles her worldview on air. Their explosive debates accidentally spark the "New Pond Movement," urging older women to pursue younger men and leave the "stagnant pond" behind.
-      </blockquote>
-      <p><strong>Import Options:</strong></p>
-      <ul>
-        <li>Download the image and import into SillyTavern</li>
-        <li>Or <a href="https://gist.githubusercontent.com/mattjaybe/8856eecdb2ada535095cbc35e107a4dc/raw/6490ea9f134a1c71272f0014fec31bc068d62469/realtalk-charactercard.json">download the character card JSON</a></li>
-      </ul>
-    </td>
-  </tr>
-</table>
+SillyTavern-EchoLite/
+├── manifest.json
+├── index.js
+├── style.css
+├── settings.html
+├── chat-styles/
+│   ├── discordtwitch.md
+│   └── twitterx.md
+└── i18n/
+    └── ru-ru.json
+```
 
 ---
 
-## 🤝 Contributing
+## Лицензия
 
-Contributions are welcome! Feel free to:
-- Submit bug reports and feature requests via [Issues](https://github.com/mattjaybe/SillyTavern-EchoChamber/issues)
-- Share your custom styles with the community
-- Submit pull requests for improvements
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-<p align="center">
-  Made with ❤️ for the SillyTavern community
-</p>
+MIT — based on EchoChamber by mattjaybe

@@ -29,15 +29,12 @@
 3. Чат автоматически генерируется после каждого сообщения (если включён Auto-update)
 
 ---
-# EchoLite — Руководство пользователя
-
-EchoLite — расширение для SillyTavern, которое генерирует фейковый чат зрителей (как в Discord или Twitch) в ответ на диалог с персонажем.
-
+# Руководство пользователя
 ---
 
 ## Установка
 
-1. Установите через рвздел Расширения в SillyTavern: (https://github.com/ochen-beep/SillyTavern-EchoLite)
+1. Установите через раздел Расширения в SillyTavern: (https://github.com/ochen-beep/SillyTavern-EchoLite)
 2. Перезапусти SillyTavern.
 3. Зайди в **Extensions → EchoLite** и поставь галочку **Включить EchoLite**.
 

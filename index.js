@@ -77,6 +77,10 @@
         fontFamily: 'system',
         // ── No-Save Mode ──
         noSaveMode: false,               // generate comments without saving to chat metadata
+        popoutLeft:   null,              // saved X coordinate of the popout window (px)
+        popoutTop:    null,              // saved Y coordinate of the popout window (px)
+        popoutWidth:  null,              // saved width  of the popout window (px)
+        popoutHeight: null,              // saved height of the popout window (px)
     };
 
  // STATE
@@ -854,37 +858,53 @@ Generate Discord-style chat messages reacting to the scene. Use the EXACT format
 
 **Regular message:**
 \`\`\`
-Username: message text
+neon_coder_42: message text here
 \`\`\`
 
 **Reply to someone:**
 \`\`\`
-reply:TargetUsername:quoted text snippet
-Username: message text
+reply:neon_coder_42:quoted text snippet
+ghost_reader: message text here
 \`\`\`
 
 **Message with reactions:**
 \`\`\`
-Username: message text
+neon_coder_42: message text here
 reactions: 😭 2, 😊, 🔥 15
 \`\`\`
 
 **Reply + reactions combined:**
 \`\`\`
-reply:TargetUsername:quoted text snippet
-Username: message text
+reply:neon_coder_42:quoted text snippet
+ghost_reader: message text here
 reactions: 😭 4, 💀 12
+\`\`\`
+
+**Complete example (3 messages):**
+\`\`\`
+soft_tiger_paws: Блин, как же он тяжело отрывался от кровати 😭
+reactions: 😭 12, 🐈 25
+
+reply:soft_tiger_paws:тяжело отрывался от кровати
+Тамара_Васильевна: Ой, бедняжка... Пусть кушает хорошо!
+reactions: 🙏 10
+
+ALLCAPS_CHAOS: АХАХАХА ОН ЖЕ ПРОСТО КОТ А НЕ ИМПЕРАТОР
+reactions: 🤣 45, 💀 20
 \`\`\`
 
 ## FORMAT RULES
 
-- \`reply:\` line MUST come directly BEFORE the replying message — no blank lines between them
-- \`reactions:\` line MUST come directly AFTER the message it belongs to
+- **Separate every message with a blank line** — this is mandatory
+- The \`reply:\` line and its message are ONE block — no blank line between them
+- The \`reactions:\` line belongs to the message directly above it — no blank line between them
+- The nickname comes FIRST, directly before the colon — NEVER write the word "Username" literally
+- Each message starts with \`actual_nickname: message text\` on one line
 - Reaction format: \`emoji count\` (with space) or just \`emoji\` — separated by commas
 - Counts: realistic numbers like \`3\`, \`17\`, \`2.4K\` — NOT every message needs reactions
 - Reply quotes: short fragment (4–8 words), verbatim from the target's message
-- Username: max 32 chars, NO colons inside username
-- Max 1–2 reactions per message — only messages that deserve engagement get them
+- Nickname: max 32 chars, NO colons inside nickname
+- Max 1–4 reactions per message — only messages that genuinely hit
 
 ${nicknames}
 
@@ -1241,7 +1261,9 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
 
     // Words that can never be the start of a real username.
     // Catches meme patterns like "Также Искан: ..." being parsed as a new speaker.
-    const CONNECTOR_WORDS_RE = /^(также|ещё|еще|но|однако|и\s|а\s|потом|кроме|кстати|при|во|со|за|из|по|тем|зато|хотя|when|also|but|then|however|yet|and|or|plus|still|even|just|though|while|meanwhile|after|before)\b/i;
+    // Russian prepositions/conjunctions are included to prevent prose lines like
+    // "через секунду: ..." or "после этого: ..." from being misread as usernames.
+    const CONNECTOR_WORDS_RE = /^(также|ещё|еще|но|однако|и\s|а\s|потом|кроме|кстати|при|во|со|за|из|по|тем|зато|хотя|через|после|перед|между|вместе|вместо|спустя|прямо|сразу|вдруг|когда|пока|если|чтобы|потому|поэтому|всё\s|все\s|это\s|он\s|она\s|они\s|его\s|её\s|when|also|but|then|however|yet|and|or|plus|still|even|just|though|while|meanwhile|after|before|through|instead|because|although|unless)\b/i;
 
     /** Returns false if `raw` looks like a connector phrase rather than a real username. */
     function isLikelyUsername(raw) {
@@ -1334,9 +1356,26 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
     }
 
  // REALDISCORD PARSER — replies + reactions
+    // ─────────────────────────────────────────────────────────────────────────
+    // ARCHITECTURE: block-based parsing.
+    //
+    // The LLM output is split on blank lines → each "block" = one message.
+    // Inside a block the structure is always:
+    //   [reply:nick:quote]      ← optional, 0 or 1 line
+    //   nick: message text      ← required, always first non-special line
+    //   [reactions: ...]        ← optional, 0 or 1 line
+    //
+    // This is fundamentally unambiguous: we never need to guess whether
+    // "чайная пьяница: текст" is a username or prose — it's always the
+    // message line of its own block.  No word-count heuristics, no
+    // connector-word blacklists, no uppercase guards needed.
+    //
+    // Fallback: if the raw text has no blank lines at all (edge case with
+    // some models), we fall back to the old line-by-line parser.
+    // ─────────────────────────────────────────────────────────────────────────
     function parseMessagesRealDiscord(rawText) {
         rawText = stripReasoningBlocks(rawText);
-        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
         // Gradient pairs [from, to] — each user gets a unique gradient
         const gradientPalette = [
             ['#7289da','#5865f2'],
@@ -1360,19 +1399,100 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             return userGradients[username];
         }
 
-        // Solid color for reply bars (gradient on tiny text looks bad)
         function getSolidColor(username) {
-            const g = getGradient(username);
-            return g[0];
+            return getGradient(username)[0];
         }
 
-        // Parse into message objects: { username, content, replyTo, replyQuote, reactions[] }
+        // ── helpers ──────────────────────────────────────────────────────────
+
+        /** Extract nick+content from a line like "nick: text" or "nick_space pad: text".
+         *  Returns [nick, content] or null. */
+        function parseMsgLine(line) {
+            const colonIdx = line.indexOf(': ');
+            if (colonIdx <= 0 || colonIdx > 80) return null;
+            const nick = cleanUsername(line.slice(0, colonIdx));
+            const content = line.slice(colonIdx + 2).trim();
+            if (!nick || !content || nick.includes(':')) return null;
+            return [nick, content];
+        }
+
+        // ── split into blocks by blank lines ─────────────────────────────────
+        const rawBlocks = rawText.split(/\n[ \t]*\n+/);
+        const blocks = rawBlocks
+            .map(b => b.trim())
+            .filter(b => b.length > 0);
+
+        // ── fallback: no blank lines → old line-by-line parser ───────────────
+        if (blocks.length < 2) {
+            return parseMessagesRealDiscordLinear(rawText, getGradient, getSolidColor);
+        }
+
+        // ── block-based parsing ───────────────────────────────────────────────
         const messages = [];
-        let pendingReply = null; // { replyTo, replyQuote }
 
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+        for (const block of blocks) {
+            const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            if (lines.length === 0) continue;
 
+            let cursor = 0;
+
+            // Optional reply: prefix
+            let replyTo = null, replyQuote = null;
+            const replyMatch = lines[0].match(/^reply:([^:]{1,120}):(.+)$/i);
+            if (replyMatch) {
+                replyTo    = cleanUsername(replyMatch[1]).trim();
+                replyQuote = replyMatch[2].trim();
+                cursor = 1;
+            }
+
+            // Skip any stray reactions: lines before the message line
+            while (cursor < lines.length && /^reactions:\s*/i.test(lines[cursor])) cursor++;
+
+            if (cursor >= lines.length) continue; // block had only reply/reactions, skip
+
+            // The current line MUST be "nick: message" — no guessing needed
+            const parsed = parseMsgLine(lines[cursor]);
+            if (!parsed) continue; // malformed block — skip
+            const [username, content] = parsed;
+            cursor++;
+
+            // Everything after: reactions line(s) or extra content lines
+            let reactions = [];
+            const extraContent = [];
+            for (; cursor < lines.length; cursor++) {
+                const reactMatch = lines[cursor].match(/^reactions:\s*(.+)$/i);
+                if (reactMatch) {
+                    reactions = parseReactions(reactMatch[1]);
+                } else {
+                    extraContent.push(lines[cursor]);
+                }
+            }
+
+            const fullContent = extraContent.length > 0
+                ? content + '\n' + extraContent.join('\n')
+                : content;
+
+            messages.push({ username, content: fullContent, replyTo, replyQuote, reactions });
+        }
+
+        if (messages.length === 0) {
+            return `<div class="discord_status">${rawText.replace(/\n/g, '<br>')}</div>`;
+        }
+
+        return renderRealDiscordMessages(messages, getGradient, getSolidColor);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LINEAR FALLBACK PARSER (used when LLM outputs no blank lines at all)
+    // Same logic as the old parser, but without the uppercase guard that
+    // broke lowercase usernames like "чайная пьяница".
+    // ─────────────────────────────────────────────────────────────────────────
+    function parseMessagesRealDiscordLinear(rawText, getGradient, getSolidColor) {
+        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const messages = [];
+        let pendingReply = null;
+
+        for (const line of lines) {
             // reply: line
             const replyMatch = line.match(/^reply:([^:]{1,120}):(.+)$/i);
             if (replyMatch) {
@@ -1383,44 +1503,35 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
                 continue;
             }
 
-            // reactions: line — attach to last message
+            // reactions: line
             const reactMatch = line.match(/^reactions:\s*(.+)$/i);
             if (reactMatch && messages.length > 0) {
-                const last = messages[messages.length - 1];
-                last.reactions = parseReactions(reactMatch[1]);
+                messages[messages.length - 1].reactions = parseReactions(reactMatch[1]);
                 continue;
             }
 
-            // Username: message
-            // Primary: single-word username (no spaces inside).
-            // Secondary: multi-word username (e.g. "Vincent D'Arcy: ...", "Вивьен Д'Арси: ...").
-            //   Uses indexOf instead of regex to avoid Unicode character-class quirks
-            //   with apostrophe variants (U+2019 etc.) on Android/Termux V8 without the 'u' flag.
-            //   Guard: line must start with uppercase — prevents "через секунду: ..." false-positives.
-            let msgMatch = line.match(/^([^\s:]{1,120}):\s*(.+)$/);
-            if (!msgMatch && /^[A-ZА-ЯЁ\d]/.test(line)) {
+            // nick: message — try single-word nick first, then multi-word
+            let username = null, content = null;
+            const simple = line.match(/^([^\s:]{1,80}):\s*(.+)$/);
+            if (simple) {
+                username = cleanUsername(simple[1]);
+                content  = simple[2].trim();
+            } else {
                 const colonIdx = line.indexOf(': ');
-                if (colonIdx > 0 && colonIdx <= 64) {
-                    const potentialUser = line.slice(0, colonIdx);
-                    const content = line.slice(colonIdx + 2).trim();
-                    // Valid: no colon inside name, max 5 words (e.g. "BABY FEVER Vincent D'Arcy"), non-empty content
-                    if (content && !potentialUser.includes(':') && potentialUser.trim().split(/\s+/).length <= 5) {
-                        msgMatch = [null, potentialUser, content];
+                if (colonIdx > 0 && colonIdx <= 80) {
+                    const potentialNick = line.slice(0, colonIdx);
+                    const potentialContent = line.slice(colonIdx + 2).trim();
+                    if (potentialContent && !potentialNick.includes(':')) {
+                        username = cleanUsername(potentialNick);
+                        content  = potentialContent;
                     }
                 }
             }
-            if (msgMatch) {
-                const username = cleanUsername(msgMatch[1]);
-                if (!username) continue;
-                if (!isLikelyUsername(username)) {
-                    // Connector phrase like "Также Искан: ..." — append to last message
-                    if (messages.length > 0) messages[messages.length - 1].content += '\n' + line;
-                    pendingReply = null;
-                    continue;
-                }
+
+            if (username && content) {
                 messages.push({
                     username,
-                    content:    msgMatch[2].trim(),
+                    content,
                     replyTo:    pendingReply ? pendingReply.replyTo    : null,
                     replyQuote: pendingReply ? pendingReply.replyQuote : null,
                     reactions:  [],
@@ -1429,7 +1540,7 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
                 continue;
             }
 
-            // Continuation line → append to last message
+            // Continuation line
             if (messages.length > 0) {
                 messages[messages.length - 1].content += '\n' + line;
             }
@@ -1439,12 +1550,16 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             return `<div class="discord_status">${rawText.replace(/\n/g, '<br>')}</div>`;
         }
 
+        return renderRealDiscordMessages(messages, getGradient, getSolidColor);
+    }
+
+    // ── shared HTML renderer for both parsers ────────────────────────────────
+    function renderRealDiscordMessages(messages, getGradient, getSolidColor) {
         return messages.map(msg => {
             const grad    = getGradient(msg.username);
             const solid   = getSolidColor(msg.username);
             const content = formatMessageContent(msg.content);
 
-            // Reply bar — solid color, no avatar
             let replyBar = '';
             if (msg.replyTo) {
                 const replyColor = getSolidColor(msg.replyTo);
@@ -1456,7 +1571,6 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
                 </div>`;
             }
 
-            // Reactions
             let reactionsHtml = '';
             if (msg.reactions && msg.reactions.length > 0) {
                 const chips = msg.reactions.map(r =>
@@ -1465,7 +1579,6 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
                 reactionsHtml = `<div class="rd_reactions">${chips}</div>`;
             }
 
-            // Gradient style for username — data attrs carry colors for CSS var injection
             const gradStyle = `background: linear-gradient(90deg, ${grad[0]}, ${grad[1]}); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; color: transparent;`;
 
             return `<div class="discord_message rd_message">
@@ -1757,7 +1870,7 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
 
         bindEventHandlers();
         initResizeLogic();
-        if (pos === 'popout') initPopoutDrag();
+        if (pos === 'popout') { initPopoutDrag(); requestAnimationFrame(restorePopoutPosition); }
         restoreCachedCommentary();
         updateSTInputVisibility();
         checkCompactMode();
@@ -1829,7 +1942,7 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
 
         updateSTInputVisibility();
         checkCompactMode();
-        if (pos === 'popout') initPopoutDrag();
+        if (pos === 'popout') { initPopoutDrag(); restorePopoutPosition(); }
     }
 
     // ───────────────────────────────────────────────────────────
@@ -1896,6 +2009,16 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             handle.classList.remove('resizing');
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('touchmove', onMove);
+            // Persist popout size so it survives page reload
+            if ((settings.position || 'bottom') === 'popout') {
+                const savedW = parseFloat(bar.style.width);
+                const savedH = parseFloat(bar.style.height);
+                if (!isNaN(savedW) && !isNaN(savedH)) {
+                    settings.popoutWidth  = savedW;
+                    settings.popoutHeight = savedH;
+                    saveSettings();
+                }
+            }
         }
 
         handle.addEventListener('mousedown', onStart);
@@ -1905,6 +2028,33 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
     // ───────────────────────────────────────────────────────────
     // POPOUT DRAG (move the floating panel by dragging its header)
     // ───────────────────────────────────────────────────────────
+    /**
+     * Apply saved popout coordinates to the bar element.
+     * Clamps against current viewport so a saved position from a different
+     * screen size never places the window fully out of view.
+     */
+    function restorePopoutPosition() {
+        const bar = document.getElementById('discordBar');
+        if (!bar) return;
+        // Restore size first — so offsetWidth/offsetHeight are correct when clamping position
+        if (settings.popoutWidth !== null && settings.popoutHeight !== null) {
+            const maxW = Math.round(window.innerWidth  * 0.9);
+            const maxH = Math.round(window.innerHeight * 0.85);
+            bar.style.width  = `${Math.max(240, Math.min(maxW, settings.popoutWidth))}px`;
+            bar.style.height = `${Math.max(120, Math.min(maxH, settings.popoutHeight))}px`;
+        }
+        if (settings.popoutLeft === null || settings.popoutTop === null) return;
+        const maxLeft = Math.max(0, window.innerWidth  - bar.offsetWidth);
+        const maxTop  = Math.max(0, window.innerHeight - bar.offsetHeight);
+        const left = Math.min(Math.max(0, settings.popoutLeft), maxLeft);
+        const top  = Math.min(Math.max(0, settings.popoutTop),  maxTop);
+        bar.style.transform = 'none';
+        bar.style.right     = 'auto';
+        bar.style.bottom    = 'auto';
+        bar.style.left      = `${left}px`;
+        bar.style.top       = `${top}px`;
+    }
+
     function initPopoutDrag() {
         const bar    = document.getElementById('discordBar');
         const header = document.getElementById('discordQuickSettings');
@@ -1957,6 +2107,14 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
         function onDragEnd() {
             document.removeEventListener('mousemove', onDragMove);
             document.removeEventListener('touchmove', onDragMove);
+            // Persist current popout position so it survives page reload
+            const savedLeft = parseFloat(bar.style.left);
+            const savedTop  = parseFloat(bar.style.top);
+            if (!isNaN(savedLeft) && !isNaN(savedTop)) {
+                settings.popoutLeft = savedLeft;
+                settings.popoutTop  = savedTop;
+                saveSettings();
+            }
         }
 
         header.addEventListener('mousedown',  onDragStart);

@@ -2391,6 +2391,11 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             if (Date.now() < _navLockUntil) return;
             const msg = ctx.chat?.[parseInt(msgId)];
             if (!msg || msg.is_user || msg.is_system || msg.is_hidden) return;
+            // Guard: message is still being generated (ST placeholder) — skip until content is real.
+            // Without this, the IO observer fires for the newly-added AI slot while it still has
+            // mes="..." and triggers EchoLite with an empty/placeholder prompt.
+            const msgText = (msg.mes || '').trim();
+            if (!msgText || msgText === '...' || msgText.length < 5) return;
             const swipeIdx = typeof msg.swipe_id === 'number' ? msg.swipe_id : 0;
 
             // Only switch if we're actually looking at a different post/swipe

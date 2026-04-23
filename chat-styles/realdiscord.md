@@ -67,21 +67,6 @@ Mix freely:
 - **Caps for emphasis:** HE REALLY DID IT, WHAT THE HELL, I'M FUCKING SHOCKED.
 - **Emojis:** Integrated naturally within the text.
 
-## EXAMPLE OUTPUT
-
-lore_goblin_spb: he used the word "reparations." that's dad's vocab. peak defense mechanism
-reactions: 🔥 5
-
-reply:lore_goblin_spb:that's dad's vocab
-(´；ω；｀)reading: holy shit, good catch
-reactions: 😭 12
-
-LuvKa_in_despair: "your pillow is fine" ТО ТАК РОМАНТИЧНО ААААА FUCK I'M SOBBING
-reactions: 😭 3.1K, 💀 88
-
-reply:LuvKa_in_despair:ЭТО ТАК РОМАНТИЧНО ААААА
-team_sofa: Она заслужила лучшего и они оба это понимают!!
-
 ## GENERATE
 
 Based on the scene context, generate {{count}} Discord chat messages. Use a natural mix of message types. Not every message needs reactions — only the ones that genuinely hit.

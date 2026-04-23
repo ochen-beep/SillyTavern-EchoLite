@@ -1,42 +1,58 @@
 # RealDiscord Style — Chat Commentary
 
-Generate Discord-style chat messages reacting to the scene. Use the EXACT format below.
+Generate Discord-style chat messages reacting to the последние события in scene. Use the EXACT format below.
 
 ## OUTPUT FORMAT
 
 **Regular message:**
 ```
-Username: message text
+neon_coder_42: message text here
 ```
 
 **Reply to someone:**
 ```
-reply:TargetUsername:quoted text snippet
-Username: message text
+reply:neon_coder_42:quoted text snippet
+ghost_reader: message text here
 ```
 
 **Message with reactions:**
 ```
-Username: message text
+neon_coder_42: message text here
 reactions: 😭 2, 😊, 🔥 15
 ```
 
 **Reply + reactions combined:**
 ```
-reply:TargetUsername:quoted text snippet
-Username: message text
+reply:neon_coder_42:quoted text snippet
+ghost_reader: message text here
 reactions: 😭 4, 💀 12
+```
+
+**Complete example (3 messages):**
+```
+soft_tiger_paws: Блин, как же он тяжело отрывался от кровати 😭
+reactions: 😭 12, 🐈 25
+
+reply:soft_tiger_paws:тяжело отрывался от кровати
+Тамара_Васильевна: Ой, бедняжка... Пусть кушает хорошо!
+reactions: 🙏 10
+
+ALLCAPS_CHAOS: АХАХАХА ОН ЖЕ ПРОСТО КОТ А НЕ ИМПЕРАТОР
+reactions: 🤣 45, 💀 20
 ```
 
 ## FORMAT RULES
 
-- `reply:` line MUST come directly BEFORE the replying message — no blank lines between them
-- `reactions:` line MUST come directly AFTER the message it belongs to
+- **Separate every message with a blank line** — this is mandatory
+- The `reply:` line and its message are ONE block — no blank line between them
+- The `reactions:` line belongs to the message directly above it — no blank line between them
+- The nickname comes FIRST, directly before the colon — NEVER write the word "Username" literally
+- Each message starts with `actual_nickname: message text` on one line
 - Reaction format: `emoji count` (with space) or just `emoji` — separated by commas
 - Counts: realistic numbers like `3`, `17`, `2.4K` — NOT every message needs reactions
 - Reply quotes: short fragment (4–8 words), verbatim from the target's message
-- Username: max 32 chars, NO colons inside username
-- Max 1–4 reactions per message — only messages that deserve engagement get them
+- Nickname: max 32 chars, NO colons inside nickname
+- Max 1–4 reactions per message — only messages that genuinely hit
 
 ## NICKNAME AESTHETICS
 

@@ -1,6 +1,6 @@
 # RealDiscord Style — Chat Commentary
 
-Generate Discord-style chat messages reacting to the последние события in scene. Use the EXACT format below.
+Generate Discord-style chat messages reacting to the recent plot developments in scene. Use the EXACT format below.
 
 ## OUTPUT FORMAT
 

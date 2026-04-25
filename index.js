@@ -936,31 +936,107 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
         if (labelCustom) labelCustom.classList.toggle('ec-prompt-mode-active', isCustom);
     }
 
-    // ───────────────────────────────────────────────────────────
-    function buildContextBlock() {
-        const ctx = SillyTavern.getContext();
-        const parts = [];
+	// ───────────────────────────────────────────────────────────
+		/**
+		 * Build context block for the prompt. Now async due to getWorldInfoPrompt.
+		 * @returns {Promise<string>}
+		 */
+		async function buildContextBlock() {
+		const ctx = SillyTavern.getContext();
+		const parts = [];
 
-        if (settings.includePersona) {
-            try {
-                const persona = ctx.getPersonaDescription ? ctx.getPersonaDescription() : '';
-                if (persona) parts.push(`[Persona: ${persona}]`);
-            } catch {}
-        }
+		if (settings.includePersona) {
+		try {
+		const personaDesc = getPersonaDescription(ctx);
+		if (personaDesc) parts.push(`[Persona: ${personaDesc}]`);
+		} catch {}
+		}
 
-        if (settings.includeCharacterDescription) {
-            try {
-                const chars = getActiveCharacters();
-                if (ctx.characterId !== undefined && ctx.characters?.[ctx.characterId]) {
-                    const ch = ctx.characters[ctx.characterId];
-                    const desc = ch.description || '';
-                    if (desc) parts.push(`[Character: ${ch.name}\n${desc}]`);
-                }
-            } catch {}
-        }
+		if (settings.includeCharacterDescription) {
+		try {
+		const chars = getActiveCharacters();
+		if (ctx.characterId !== undefined && ctx.characters?.[ctx.characterId]) {
+		const ch = ctx.characters[ctx.characterId];
+		const desc = ch.description || '';
+		if (desc) parts.push(`[Character: ${ch.name}\n${desc}]`);
+		}
+		} catch {}
+		}
 
-        return parts.join('\n\n');
-    }
+		if (settings.includeWorldInfo) {
+		try {
+		// getWorldInfoContext is now async
+		const wi = await getWorldInfoContext(ctx);
+		if (wi) parts.push(`[World Info / Lorebook:\n${wi}]`);
+		} catch (e) { warn('buildContextBlock WI error:', e); }
+		}
+
+		return parts.join('\n\n');
+		}
+
+			/**
+			 * Get Persona description from SillyTavern's power user settings.
+			 * Uses power_user.persona_description as the active persona description
+			 * and ctx.name1 as the persona name.
+			 * @param {Object} ctx - SillyTavern context
+			 * @returns {string|null}
+			 */
+			function getPersonaDescription(ctx) {
+			try {
+			const pu = ctx.powerUserSettings;
+			if (!pu) return null;
+
+			// In SillyTavern, persona_description contains the active description
+			const description = pu.persona_description || '';
+			
+			if (description) {
+			return description;
+			}
+
+			// Fallback: try to find description in persona_descriptions by searching for name1
+			const name1 = ctx.name1;
+			if (name1 && pu.personas && pu.persona_descriptions) {
+			for (const [avatarId, personaName] of Object.entries(pu.personas)) {
+			if (personaName === name1 && pu.persona_descriptions[avatarId]) {
+			const pd = pu.persona_descriptions[avatarId];
+			if (pd?.description) return pd.description;
+			}
+			}
+			}
+
+			return null;
+			} catch (e) {
+			warn('getPersonaDescription error:', e);
+			return null;
+			}
+			}
+
+		/**
+		 * Get World Info context for the current chat state.
+		 * Uses the budget from settings.wiTokenBudget (0 = use ST maxContext)
+		 * @param {Object} ctx - SillyTavern context (optional, will fetch if not provided)
+		 * @returns {Promise<string|null>}
+		 */
+		async function getWorldInfoContext(ctx) {
+		try {
+		if (!ctx) ctx = SillyTavern.getContext();
+		// getWorldInfoPrompt is available in ST >= 1.12
+		// Signature: getWorldInfoPrompt(chatList, maxContext) -> Promise<string>
+		if (typeof ctx.getWorldInfoPrompt === 'function') {
+		const budget = parseInt(settings.wiTokenBudget) || ctx.maxContext || 2048;
+		const chatList = ctx.chat || [];
+		// getWorldInfoPrompt returns a formatted string directly
+		const wiString = await ctx.getWorldInfoPrompt(chatList, budget);
+		return wiString || null;
+		}
+		// Fallback: check for extension_prompts 'world_info'
+		if (ctx.extensionPrompts && ctx.extensionPrompts.world_info) {
+		const prompt = ctx.extensionPrompts.world_info.value || '';
+		return prompt.trim() || null;
+		}
+		} catch (e) { warn('getWorldInfoContext error:', e); }
+		return null;
+		}
 
     function buildChatHistory(anchorMsgId) {
         try {
@@ -971,7 +1047,13 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             const endIdx = (anchorMsgId !== undefined && anchorMsgId !== null)
                 ? parseInt(anchorMsgId) + 1
                 : chat.length;
-            const recent = chat.slice(0, endIdx).slice(-depth).filter(m => !m.is_system);
+            // Filter visible messages BEFORE taking the depth slice.
+            // If the last N messages are system/hidden (injected context, tool calls, etc.)
+            // the old approach — slice(-depth) first, then filter — would yield an empty array.
+            // Matching EchoChamber: filter the full range, then take the last `depth` entries.
+            const visible = chat.slice(0, endIdx).filter(m => !m.is_system && !m.is_hidden);
+            const recent  = visible.slice(-depth);
+            if (!recent.length) return '';
             return recent.map(m => {
                 const name = m.is_user ? (ctx.name1 || 'User') : (m.name || 'AI');
                 const text = extractText(m.mes || '');
@@ -980,8 +1062,12 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
         } catch { return ''; }
     }
 
-    function buildPastCommentary() {
+    function buildPastCommentary(msgId, swipeIdx) {
         if (!settings.includePastEcho) return '';
+        // Only use current global state for the visible post matching this msgId/swipeIdx
+        if (String(msgId) !== String(currentPostId) || String(swipeIdx) !== String(currentSwipeIdx)) {
+            return '';
+        }
         try {
             // Use the currently displayed post+swipe cached HTML as context
             const html = getCachedPost(currentPostId, currentSwipeIdx);
@@ -1060,9 +1146,9 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             if (!stylePrompt) throw new Error('No style prompt loaded');
 
             const count = parseInt(settings.userCount) || 5;
-            const contextBlock = buildContextBlock();
+            const contextBlock = await buildContextBlock();
             const chatHistory = buildChatHistory(resolvedMsgId);
-            const pastCommentary = buildPastCommentary();
+            const pastCommentary = buildPastCommentary(resolvedMsgId, resolvedSwipeIdx);
 
             // systemPrompt = инструкции стиля (realdiscord.md и т.д.)
             // userPrompt   = контент сцены (что генерировать)
@@ -1072,7 +1158,7 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             const userParts = [`Generate ${count} chat messages.`];
             if (contextBlock) userParts.push(contextBlock);
             if (chatHistory) userParts.push(`[Recent Conversation:\n${chatHistory}]`);
-            if (pastCommentary) userParts.push(pastCommentary);
+            if (pastCommentary && settings.includePastEcho) userParts.push(pastCommentary);
             const userPrompt = userParts.join('\n\n');
 
             const html = await callGenerationAPI(systemPrompt, userPrompt, signal);
@@ -2533,11 +2619,12 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
          * Receives the DOM element ([mesid]) that is currently most visible.
          */
         function handleBestVisible(bestEl) {
-            // Skip elements with height < 40px — hidden/collapsed message stubs.
-            // ST collapses a hidden message to a thin header (~30px). The IO or
-            // getBoundingClientRect fallback would otherwise pick it as 100%-visible
-            // and incorrectly override the commentary for the real visible post.
-            if (bestEl.getBoundingClientRect().height < 40) return;
+            // Skip elements with height < 40px UNLESS ST has marked them as
+            // is_system="true" (collapsed "Exclude from prompt" header, ~30px).
+            // Those stubs are still user-visible and must trigger commentary switching.
+            // Plain tiny stubs without the attribute are placeholders — skip them.
+            const isSystemEl = bestEl.getAttribute('is_system') === 'true';
+            if (bestEl.getBoundingClientRect().height < 40 && !isSystemEl) return;
 
             const msgId = bestEl.dataset.msgid;
             if (msgId === undefined || msgId === null) return;
@@ -2548,7 +2635,9 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             // Guard: explicit nav lock — user just selected a post manually, don't override
             if (Date.now() < _navLockUntil) return;
             const msg = ctx.chat?.[parseInt(msgId)];
-            if (!msg || msg.is_user || msg.is_system || msg.is_hidden) return;
+            // Allow is_system posts: "Exclude from prompt" hides from AI but not from UI.
+            // The user can still scroll to them and expects their commentary to show.
+            if (!msg || msg.is_user || msg.is_hidden) return;
             // Guard: message is still being generated (ST placeholder) — skip until content is real.
             // Without this, the IO observer fires for the newly-added AI slot while it still has
             // mes="..." and triggers EchoLite with an empty/placeholder prompt.
@@ -2584,11 +2673,12 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             });
 
             // Find the most-visible AI block.
-            // Skip hidden stubs (height < 40px) — they score ratio=1.0 on tiny size.
+            // Skip tiny stubs (height < 40px) UNLESS they carry is_system="true"
+            // (ST's collapsed "Exclude from prompt" header) — those must participate.
             let bestEl    = null;
             let bestRatio = 0;
             for (const [el, ratio] of candidates) {
-                if (el.getBoundingClientRect().height < 40) continue;
+                if (el.getBoundingClientRect().height < 40 && el.getAttribute('is_system') !== 'true') continue;
                 if (ratio > bestRatio) { bestRatio = ratio; bestEl = el; }
             }
             if (!bestEl || bestRatio < 0.1) return; // nothing meaningfully visible
@@ -2609,7 +2699,8 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             const vH = window.innerHeight;
             candidates.forEach((_, el) => {
                 const rect = el.getBoundingClientRect();
-                if (rect.height < 40) return; // skip hidden/collapsed stubs
+                // Skip tiny stubs unless they are ST's collapsed "Exclude from prompt" headers.
+                if (rect.height < 40 && el.getAttribute('is_system') !== 'true') return;
                 const visible = Math.max(0, Math.min(rect.bottom, vH) - Math.max(rect.top, 0));
                 const ratio   = visible / rect.height;
                 if (ratio > bestRatio) { bestRatio = ratio; bestEl = el; }
@@ -2628,7 +2719,9 @@ Based on the scene context, generate {{count}} Discord chat messages. Use a natu
             const msgid = el.getAttribute('mesid');
             if (!msgid) return;
             const msg = SillyTavern.getContext().chat?.[parseInt(msgid)];
-            if (!msg || msg.is_user || msg.is_system || msg.is_hidden) return;
+            // Register is_system posts too: they are "Exclude from prompt" messages,
+            // still visible in the UI as collapsed headers with existing commentary.
+            if (!msg || msg.is_user || msg.is_hidden) return;
             el.dataset.msgid = msgid;
             _postScrollObserver.observe(el);
         }
@@ -3960,16 +4053,26 @@ Make each username unique and personality-consistent.`;
 
             // ── MESSAGE_UPDATED: handle hide/unhide ──────────────────────────
             // ST fires MESSAGE_UPDATED(msgId) when a message's metadata changes,
-            // including when the user hides/unhides it via the eye-button.
-            // If the currently displayed post gets hidden, switch to the next visible AI post.
-            // If a hidden post is unhidden, refresh the scroll observer so it becomes trackable.
+            // including when the user hides/unhides it via "Exclude from prompt" (eye-button).
+            //
+            // IMPORTANT: "Exclude from prompt" sets msg.is_system = true (via hideChatMessageRange).
+            // It does NOT set is_hidden — that is a separate mechanism (JS-Slash-Runner, /hide cmd).
+            // So we must react to BOTH flags, and we must NOT early-return on is_system.
+            //
+            // If the currently displayed post gets hidden (either way), switch to next visible AI post.
+            // If a hidden post is unhidden, refresh the scroll observer so it becomes trackable again.
             if (ctx.eventTypes.MESSAGE_UPDATED) {
                 ctx.eventSource.on(ctx.eventTypes.MESSAGE_UPDATED, (msgId) => {
                     const ctx2 = SillyTavern.getContext();
                     const msg  = ctx2.chat?.[parseInt(msgId)];
-                    if (!msg || msg.is_user || msg.is_system) return;
+                    // Only process AI messages — ignore user and truly headless system injections
+                    // (system injections have no name/mes and are never displayed as posts)
+                    if (!msg || msg.is_user) return;
 
-                    if (msg.is_hidden) {
+                    // A post is "effectively hidden" if either flag is set
+                    const isNowHidden = msg.is_system || msg.is_hidden;
+
+                    if (isNowHidden) {
                         // The post was just hidden — if it's the currently shown one, find another
                         if (String(msgId) === String(currentPostId)) {
                             const last = resolveLastAIPost();

@@ -123,6 +123,9 @@ export async function generateWithProfile(profileName, prompt, systemPrompt = ''
                 }
             }
 
+            // OpenAI text-completion format (KoboldCpp, llama.cpp, vLLM, etc.)
+            if (typeof resp.choices?.[0]?.text === 'string') return resp.choices[0].text;
+
             // Other common fields
             if (typeof resp.text === 'string') return resp.text;
             if (typeof resp.message === 'string') return resp.message;

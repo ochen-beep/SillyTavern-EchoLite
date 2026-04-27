@@ -1,4 +1,4 @@
-// EchoChamber Extension - Import-free version using SillyTavern.getContext()
+﻿// EchoChamber Extension - Import-free version using SillyTavern.getContext()
 // No ES6 imports - uses the stable SillyTavern global object
 
 (function () {
@@ -52,6 +52,7 @@
         livestreamMode: 'manual',
         livestreamMinWait: 5,
         livestreamMaxWait: 60,
+        livestreamAutoScroll: true,
         custom_styles: {},
         deleted_styles: [],
         style_order: null,
@@ -63,6 +64,8 @@
         floatTop: null,
         floatWidth: null,
         floatHeight: null,
+        floatOpen: false,
+        messageOrder: 'oldest-first',
     };
 
     let settings = JSON.parse(JSON.stringify(defaultSettings));
@@ -340,6 +343,9 @@
             }
         }
 
+        // 4b. OpenAI text-completion format (KoboldCpp, llama.cpp, vLLM, etc.)
+        if (typeof response.choices?.[0]?.text === 'string') return response.choices[0].text;
+
         // 5. Other common fields
         if (typeof response.text === 'string') return response.text;
         if (typeof response.message === 'string') return response.message;
@@ -359,9 +365,14 @@
 
         discordContent.html(html);
 
-        // Scroll to top of the EchoChamber panel
+        // Scroll to appropriate end based on message order setting
         if (discordContent[0]) {
-            discordContent[0].scrollTo({ top: 0, behavior: 'smooth' });
+            if (settings.messageOrder === 'newest-first') {
+                discordContent[0].scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                // oldest-first: scroll to bottom so the newest message is visible
+                discordContent[0].scrollTo({ top: discordContent[0].scrollHeight, behavior: 'smooth' });
+            }
         }
 
         if (chatBlock.length) {
@@ -372,7 +383,11 @@
         // Sync to floating panel if open
         if (floatingPanelOpen && popoutDiscordContent) {
             popoutDiscordContent.innerHTML = html;
-            popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' });
+            if (settings.messageOrder === 'newest-first') {
+                popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                popoutDiscordContent.scrollTo({ top: popoutDiscordContent.scrollHeight, behavior: 'smooth' });
+            }
         }
     }
 
@@ -452,6 +467,51 @@
     function applyAvatarColor(color) {
         // Set the CSS variable on the document root so all user-message elements pick it up
         document.documentElement.style.setProperty('--ec-user-avatar-color', color);
+    }
+
+    /**
+     * Reorder the currently displayed messages to match settings.messageOrder
+     * without requiring a regeneration. Reverses the DOM order of all
+     * .discord_message elements inside .discord_container and scrolls to the
+     * appropriate end.
+     */
+    function applyMessageOrder() {
+        // Reorder in main panel
+        const container = jQuery('#discordContent .discord_container');
+        if (container.length) {
+            const messages = container.find('.discord_message').get();
+            if (messages.length > 1) {
+                container.find('.discord_message').detach();
+                messages.reverse().forEach(el => container.append(el));
+            }
+        }
+
+        // Scroll to show the newest message at the correct end
+        const dcEl = document.getElementById('discordContent');
+        if (dcEl) {
+            if (settings.messageOrder === 'newest-first') {
+                dcEl.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                dcEl.scrollTo({ top: dcEl.scrollHeight, behavior: 'smooth' });
+            }
+        }
+
+        // Mirror to floating panel if open
+        if (floatingPanelOpen && popoutDiscordContent) {
+            const floatContainer = jQuery('#ec_float_content .discord_container');
+            if (floatContainer.length) {
+                const floatMessages = floatContainer.find('.discord_message').get();
+                if (floatMessages.length > 1) {
+                    floatContainer.find('.discord_message').detach();
+                    floatMessages.reverse().forEach(el => floatContainer.append(el));
+                }
+            }
+            if (settings.messageOrder === 'newest-first') {
+                popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                popoutDiscordContent.scrollTo({ top: popoutDiscordContent.scrollHeight, behavior: 'smooth' });
+            }
+        }
     }
 
     function formatMessage(username, content, isUser = false) {
@@ -661,6 +721,61 @@
     }
 
     // ============================================================
+    // CHARACTER NAME SNAPPING (prevents hallucinated surnames)
+    // ============================================================
+
+    /**
+     * Snaps a generated username to a known canonical character name.
+     * Resolution order: exact → case-insensitive exact → first-name-only match.
+     * Returns the canonical name if a match is found, otherwise the original name.
+     */
+    function snapToKnownCharacters(name, knownNames) {
+        if (!knownNames || knownNames.length === 0) return name;
+        const nameTrimmed = name.trim();
+        const nameLower = nameTrimmed.toLowerCase();
+
+        // 1. Exact match
+        if (knownNames.includes(nameTrimmed)) return nameTrimmed;
+
+        // 2. Case-insensitive exact match
+        const caseMatch = knownNames.find(n => n.toLowerCase() === nameLower);
+        if (caseMatch) return caseMatch;
+
+        // 3. First-name match — model often gets first name right but hallucinates the surname
+        const generatedFirst = nameLower.split(/\s+/)[0];
+        const firstNameMatch = knownNames.find(n => n.toLowerCase().split(/\s+/)[0] === generatedFirst);
+        if (firstNameMatch) return firstNameMatch;
+
+        return null; // No match — unknown character, caller should discard this message
+    }
+
+    /**
+     * Returns the list of canonical character names to use for post-processing name snapping,
+     * or null if snapping should not apply (e.g. Story style in a single-char chat where
+     * the card name is a world/story title rather than a speaking character).
+     */
+    function getKnownCharactersForSnap() {
+        if (settings.style !== 'sillytavern' && settings.style !== 'sillytavern_story') return null;
+        const ctx = SillyTavern.getContext();
+        const chars = getActiveCharacters();
+
+        if (settings.style === 'sillytavern') {
+            if (chars.length > 0) return chars.map(c => c.name);
+            const fallback = ctx.characterName || ctx.name2;
+            return fallback ? [fallback] : null;
+        }
+
+        if (settings.style === 'sillytavern_story') {
+            // Group chat: we know the cast — snap is safe
+            if (ctx.groupId && chars.length > 0) return chars.map(c => c.name);
+            // Single-char chat: card name is the story title, cast inferred from content — cannot snap
+            return null;
+        }
+
+        return null;
+    }
+
+    // ============================================================
     // LIVESTREAM FUNCTIONS
     // ============================================================
 
@@ -750,13 +865,28 @@
             }
 
             // Remove animation class from existing messages first
-            container.find('.ec_livestream_message').removeClass('ec_livestream_message');
+            container.find('.ec_livestream_message, .ec_livestream_message_bottom').removeClass('ec_livestream_message ec_livestream_message_bottom');
 
-            // Create and prepend new message
-            const tempWrapper = jQuery('<div class="ec_livestream_message"></div>').append(jQuery(message));
-            container.prepend(tempWrapper);
-
-            // Do NOT auto-scroll during livestream — user may be reading further down
+            // Create and insert new message — prepend for newest-first, append for oldest-first
+            const isNewestFirst = settings.messageOrder === 'newest-first';
+            const lsAnimClass = isNewestFirst ? 'ec_livestream_message' : 'ec_livestream_message_bottom';
+            const tempWrapper = jQuery(`<div class="${lsAnimClass}"></div>`).append(jQuery(message));
+            if (isNewestFirst) {
+                container.prepend(tempWrapper);
+                // Scroll to top so the newest message is visible (when auto-scroll is on).
+                // rAF is sufficient here — top:0 is a fixed target, not layout-dependent.
+                if (settings.livestreamAutoScroll !== false && discordContent && discordContent[0]) {
+                    requestAnimationFrame(() => discordContent[0].scrollTo({ top: 0, behavior: 'smooth' }));
+                }
+            } else {
+                container.append(tempWrapper);
+                // Scroll to bottom after the slide-in animation completes (300ms).
+                // Reading scrollHeight before then gives 0 because max-height starts at 0.
+                if (settings.livestreamAutoScroll !== false && discordContent && discordContent[0]) {
+                    const el = discordContent[0];
+                    setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 310);
+                }
+            }
 
             // Sync to floating panel if open
             if (floatingPanelOpen && popoutDiscordContent) {
@@ -774,17 +904,29 @@
                     }
 
                     // Remove animation class from popout messages
-                    popoutContainer.querySelectorAll('.ec_livestream_message').forEach(el => {
-                        el.classList.remove('ec_livestream_message');
+                    popoutContainer.querySelectorAll('.ec_livestream_message, .ec_livestream_message_bottom').forEach(el => {
+                        el.classList.remove('ec_livestream_message', 'ec_livestream_message_bottom');
                     });
 
-                    // Create clone for popout
+                    // Create clone for popout — mirror same insert direction as main panel
+                    const isNewestFirstPop = settings.messageOrder === 'newest-first';
+                    const popAnimClass = isNewestFirstPop ? 'ec_livestream_message' : 'ec_livestream_message_bottom';
                     const popoutWrapper = document.createElement('div');
-                    popoutWrapper.className = 'ec_livestream_message';
+                    popoutWrapper.className = popAnimClass;
                     popoutWrapper.innerHTML = message;
-                    popoutContainer.insertBefore(popoutWrapper, popoutContainer.firstChild);
-
-                    // Do NOT auto-scroll floating panel during livestream
+                    if (isNewestFirstPop) {
+                        popoutContainer.insertBefore(popoutWrapper, popoutContainer.firstChild);
+                        // Scroll to top for newest-first (when auto-scroll is on)
+                        if (settings.livestreamAutoScroll !== false) {
+                            requestAnimationFrame(() => popoutDiscordContent.scrollTo({ top: 0, behavior: 'smooth' }));
+                        }
+                    } else {
+                        popoutContainer.appendChild(popoutWrapper);
+                        // Scroll to bottom after animation completes (when auto-scroll is on)
+                        if (settings.livestreamAutoScroll !== false) {
+                            setTimeout(() => popoutDiscordContent.scrollTo({ top: popoutDiscordContent.scrollHeight, behavior: 'smooth' }), 310);
+                        }
+                    }
                 } catch (popoutErr) {
                     // Ignore popout errors, don't let them break the livestream
                     log('Popout sync error (ignored):', popoutErr);
@@ -1062,6 +1204,10 @@
         floatingPanelOpen = true;
         popoutDiscordContent = document.getElementById('ec_float_content');
 
+        // Persist that the floating panel is open so it can be restored after reload
+        settings.floatOpen = true;
+        saveSettings();
+
         // Attach drag and resize
         makeDraggable(panel, jQuery('#ec_float_drag_handle'));
         makeFloatingPanelResizable(panel);
@@ -1164,24 +1310,35 @@
                 input.val('');
 
                 const myMsg = formatMessage(settings.chatUsername || 'Streamer (You)', text, true);
+                const isNewestFirstFloat = settings.messageOrder === 'newest-first';
 
-                // Prepend to floating panel
+                // Insert into floating panel respecting message order
                 const floatContainer = jQuery('#ec_float_content .discord_container');
                 if (floatContainer.length) {
-                    floatContainer.prepend(myMsg);
+                    if (isNewestFirstFloat) floatContainer.prepend(myMsg);
+                    else floatContainer.append(myMsg);
                 } else {
                     jQuery('#ec_float_content').html(`<div class="discord_container">${myMsg}</div>`);
                 }
-                jQuery('#ec_float_content')[0].scrollTo({ top: 0, behavior: 'smooth' });
+                const floatEl = jQuery('#ec_float_content')[0];
+                if (floatEl) {
+                    if (isNewestFirstFloat) floatEl.scrollTo({ top: 0, behavior: 'smooth' });
+                    else floatEl.scrollTo({ top: floatEl.scrollHeight, behavior: 'smooth' });
+                }
 
-                // Also prepend to main panel so they stay in sync
+                // Mirror to main panel so they stay in sync
                 const mainContainer = jQuery('#discordContent .discord_container');
                 if (mainContainer.length) {
-                    mainContainer.prepend(myMsg);
+                    if (isNewestFirstFloat) mainContainer.prepend(myMsg);
+                    else mainContainer.append(myMsg);
                 } else {
                     jQuery('#discordContent').html(`<div class="discord_container">${myMsg}</div>`);
                 }
-                jQuery('#discordContent')[0].scrollTo({ top: 0, behavior: 'smooth' });
+                const mainEl = document.getElementById('discordContent');
+                if (mainEl) {
+                    if (isNewestFirstFloat) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+                    else mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' });
+                }
 
                 // Parse @mention and generate targeted reply
                 const atMatch = text.match(/^@([^\s]+)/);
@@ -1210,6 +1367,10 @@
         jQuery('#ec_float_style_menu_body').remove(); // cleanup body-appended float style menu
         floatingPanelOpen = false;
         popoutDiscordContent = null;
+
+        // Persist that the floating panel is now closed
+        settings.floatOpen = false;
+        saveSettings();
 
         // Re-expand the main panel when floating panel is docked/closed
         if (discordBar && settings.collapsed) {
@@ -1313,13 +1474,20 @@
         const messageCommentaries = (metadata && metadata.messageCommentaries) || {};
 
         // Extract recent EchoChamber conversation from the DOM for conversational continuity.
+        // oldest-first: newest messages are at the BOTTOM — read last 8, already chronological.
+        // newest-first: newest messages are at the TOP — read first 8, then reverse to chronological.
         const ecMessages = [];
-        jQuery('#discordContent .discord_message').slice(0, 8).each(function () {
+        const allDomMsgs = jQuery('#discordContent .discord_message');
+        const isNewestFirstCtx = settings.messageOrder === 'newest-first';
+        const recentDomMsgs = isNewestFirstCtx ? allDomMsgs.slice(0, 8) : allDomMsgs.slice(-8);
+        recentDomMsgs.each(function () {
             const uname = jQuery(this).find('.discord_username').first().text().trim();
             const content = jQuery(this).find('.discord_content').first().text().trim();
             if (uname && content) ecMessages.push(`${uname}: ${content}`);
         });
-        const ecHistory = ecMessages.reverse().join('\n');
+        // ecHistory must be in chronological order (oldest first) for the prompt.
+        // newest-first DOM order is newest→oldest so reverse; oldest-first is already chronological.
+        const ecHistory = isNewestFirstCtx ? ecMessages.reverse().join('\n') : ecMessages.join('\n');
 
         const stylePrompt = await loadChatStyle(settings.style || 'twitch');
         const chatUsername = settings.chatUsername || 'Streamer (You)';
@@ -1394,9 +1562,14 @@
             additionalSystemContext = '\n\n<lore>\n' + systemContextParts.join('\n\n') + '\n</lore>';
         }
 
+        const isSillyTavernStyle = settings.style === 'sillytavern' || settings.style === 'sillytavern_story';
         const systemMessage = targetUsername
-            ? `<role>\nYou are "${targetUsername}", a viewer in an active chatroom who was just directly addressed. Focus tightly on what "${atUsername}" just said to you — that is the primary context. Respond naturally in 1 sentence max. Use "${atUsername}" when addressing them. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`
-            : `<role>\nYou write short chatroom messages from different viewers reacting to "${atUsername}" (the streamer) and the ongoing conversation. Focus on the most recent exchange. Keep messages brief and casual. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`;
+            ? (isSillyTavernStyle
+                ? `<role>\nYou are "${targetUsername}", a character from this SillyTavern roleplay/story. ${atUsername} has just spoken directly to you. Respond fully in character — use your established voice, personality, relationships, and knowledge from the story. Respond naturally in 1–2 sentences max. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`
+                : `<role>\nYou are "${targetUsername}", a viewer in an active chatroom who was just directly addressed. Focus tightly on what "${atUsername}" just said to you — that is the primary context. Respond naturally in 1 sentence max. Use "${atUsername}" when addressing them. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`)
+            : (isSillyTavernStyle
+                ? `<role>\nYou voice the characters from this SillyTavern roleplay/story as they react in character to what ${atUsername} just said. Each character responds with their own voice, personality, and perspective. Keep responses brief and authentic. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`
+                : `<role>\nYou write short chatroom messages from different viewers reacting to "${atUsername}" (the streamer) and the ongoing conversation. Focus on the most recent exchange. Keep messages brief and casual. STRICTLY follow the provided chat style format.\n</role>${additionalSystemContext}\n\n<chat_history>`);
 
         const chatHistoryMessages = [];
         if (settings.includePastEchoChambers && metadata && metadata.messageCommentaries) {
@@ -1480,7 +1653,8 @@
 
             } else if (settings.source === 'profile') {
                 const cm = context.extensionSettings?.connectionManager;
-                const profile = cm?.profiles?.find(p => p.name === settings.preset);
+                // settings.preset stores profile ID; fall back to name match for older saved settings
+                const profile = cm?.profiles?.find(p => p.id === settings.preset) || cm?.profiles?.find(p => p.name === settings.preset);
                 if (!profile || !context.ConnectionManagerRequestService) throw new Error('Profile not available');
                 const resp = await context.ConnectionManagerRequestService.sendRequest(
                     profile.id,
@@ -1504,41 +1678,107 @@
             setStatus('');
             if (!result || !result.trim()) { isReplying = false; return; }
 
-            // Parse "username: message" lines and prepend each to existing chat
+            // Parse "username: message" lines and insert into existing chat
             const lines = result.trim().split('\n').filter(l => l.trim() && l.includes(':'));
             const container = jQuery('#discordContent .discord_container');
-            // Reverse so the first message in the AI response ends up on top
-            [...lines].reverse().forEach(line => {
-                const colonIdx = line.indexOf(':');
-                if (colonIdx < 1) return;
-                const uname = line.substring(0, colonIdx).trim();
-                const content = line.substring(colonIdx + 1).trim();
-                if (!uname || !content) return;
-                const msgHtml = formatMessage(uname, content);
-                if (container.length) {
-                    container.prepend(msgHtml);
-                } else {
-                    jQuery('#discordContent').html(`<div class="discord_container">${msgHtml}</div>`);
-                }
-            });
+            const isNewestFirst = settings.messageOrder === 'newest-first';
+
+            // Snap generated names to canonical character names to prevent hallucinated surnames
+            const replyKnownChars = getKnownCharactersForSnap();
+
+            if (isNewestFirst) {
+                // newest-first: AI replies are newer than the user's message, so prepend
+                // above it in forward order — last reply ends up at the very top.
+                lines.forEach(line => {
+                    const colonIdx = line.indexOf(':');
+                    if (colonIdx < 1) return;
+                    let uname = line.substring(0, colonIdx).trim();
+                    const content = line.substring(colonIdx + 1).trim();
+                    if (!uname || !content) return;
+                    if (replyKnownChars) {
+                        uname = snapToKnownCharacters(uname, replyKnownChars);
+                        if (!uname) return;
+                    }
+                    const msgHtml = formatMessage(uname, content);
+                    if (container.length) {
+                        container.prepend(msgHtml);
+                    } else {
+                        jQuery('#discordContent').html(`<div class="discord_container">${msgHtml}</div>`);
+                    }
+                });
+            } else {
+                // oldest-first: append in forward order so replies land at the bottom
+                lines.forEach(line => {
+                    const colonIdx = line.indexOf(':');
+                    if (colonIdx < 1) return;
+                    let uname = line.substring(0, colonIdx).trim();
+                    const content = line.substring(colonIdx + 1).trim();
+                    if (!uname || !content) return;
+                    if (replyKnownChars) {
+                        uname = snapToKnownCharacters(uname, replyKnownChars);
+                        if (!uname) return;
+                    }
+                    const msgHtml = formatMessage(uname, content);
+                    if (container.length) {
+                        container.append(msgHtml);
+                    } else {
+                        jQuery('#discordContent').html(`<div class="discord_container">${msgHtml}</div>`);
+                    }
+                });
+            }
+
+            // Scroll to show newest message
+            const dcEl = document.getElementById('discordContent');
+            if (dcEl) {
+                if (isNewestFirst) dcEl.scrollTo({ top: 0, behavior: 'smooth' });
+                else dcEl.scrollTo({ top: dcEl.scrollHeight, behavior: 'smooth' });
+            }
 
             // Mirror AI replies into the floating panel if it is open
             if (floatingPanelOpen && popoutDiscordContent) {
                 const floatContainer = jQuery('#ec_float_content .discord_container');
-                [...lines].reverse().forEach(line => {
-                    const colonIdx = line.indexOf(':');
-                    if (colonIdx < 1) return;
-                    const uname = line.substring(0, colonIdx).trim();
-                    const content = line.substring(colonIdx + 1).trim();
-                    if (!uname || !content) return;
-                    const msgHtml = formatMessage(uname, content);
-                    if (floatContainer.length) {
-                        floatContainer.prepend(msgHtml);
-                    } else {
-                        jQuery('#ec_float_content').html(`<div class="discord_container">${msgHtml}</div>`);
-                    }
-                });
-                jQuery('#ec_float_content')[0].scrollTo({ top: 0, behavior: 'smooth' });
+                if (isNewestFirst) {
+                    lines.forEach(line => {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx < 1) return;
+                        let uname = line.substring(0, colonIdx).trim();
+                        const content = line.substring(colonIdx + 1).trim();
+                        if (!uname || !content) return;
+                        if (replyKnownChars) {
+                            uname = snapToKnownCharacters(uname, replyKnownChars);
+                            if (!uname) return;
+                        }
+                        const msgHtml = formatMessage(uname, content);
+                        if (floatContainer.length) {
+                            floatContainer.prepend(msgHtml);
+                        } else {
+                            jQuery('#ec_float_content').html(`<div class="discord_container">${msgHtml}</div>`);
+                        }
+                    });
+                } else {
+                    lines.forEach(line => {
+                        const colonIdx = line.indexOf(':');
+                        if (colonIdx < 1) return;
+                        let uname = line.substring(0, colonIdx).trim();
+                        const content = line.substring(colonIdx + 1).trim();
+                        if (!uname || !content) return;
+                        if (replyKnownChars) {
+                            uname = snapToKnownCharacters(uname, replyKnownChars);
+                            if (!uname) return;
+                        }
+                        const msgHtml = formatMessage(uname, content);
+                        if (floatContainer.length) {
+                            floatContainer.append(msgHtml);
+                        } else {
+                            jQuery('#ec_float_content').html(`<div class="discord_container">${msgHtml}</div>`);
+                        }
+                    });
+                }
+                const floatEl = jQuery('#ec_float_content')[0];
+                if (floatEl) {
+                    if (isNewestFirst) floatEl.scrollTo({ top: 0, behavior: 'smooth' });
+                    else floatEl.scrollTo({ top: floatEl.scrollHeight, behavior: 'smooth' });
+                }
             }
 
             // Persist the updated panel HTML to the cache so it survives page refresh
@@ -1856,7 +2096,14 @@
         }
 
         // Build the system message with base prompt and additional context
-        const systemMessage = `<role>
+        const isSillyTavernStyle = settings.style === 'sillytavern' || settings.style === 'sillytavern_story';
+        const systemMessage = isSillyTavernStyle
+            ? `<role>
+You voice the actual characters from this SillyTavern roleplay as they react to the unfolding story in a live chat feed. Each character speaks authentically in their own established voice and personality — they are not random internet users, they are the story's cast.
+</role>${additionalSystemContext}
+
+<chat_history>`
+            : `<role>
 You are an excellent creator of fake chat feeds that react dynamically to the user's conversation context.
 </role>${additionalSystemContext}
 
@@ -1932,7 +2179,8 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
             if (settings.source === 'profile' && settings.preset) {
                 // PROFILE GENERATION - Build proper message array with chat history
                 const cm = context.extensionSettings?.connectionManager;
-                const profile = cm?.profiles?.find(p => p.name === settings.preset);
+                // settings.preset stores profile ID; fall back to name match for older saved settings
+                const profile = cm?.profiles?.find(p => p.id === settings.preset) || cm?.profiles?.find(p => p.name === settings.preset);
                 if (!profile) throw new Error(`Profile '${settings.preset}' not found`);
 
                 // Use ConnectionManagerRequestService
@@ -1964,17 +2212,6 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
                         includeInstruct: true
                     }
                 );
-
-                // DEBUG: Log the actual response shape from sendRequest
-                console.error('[EchoChamber DEBUG] sendRequest response type:', typeof response);
-                console.error('[EchoChamber DEBUG] isArray:', Array.isArray(response));
-                console.error('[EchoChamber DEBUG] response keys:', response ? Object.keys(response) : 'null/undefined');
-                if (response?.content) {
-                    console.error('[EchoChamber DEBUG] content type:', typeof response.content, 'isArray:', Array.isArray(response.content));
-                    if (Array.isArray(response.content)) {
-                        console.error('[EchoChamber DEBUG] content blocks:', response.content.map(b => ({ type: b.type, hasText: !!b.text, textLen: b.text?.length })));
-                    }
-                }
 
                 // Parse response - handle all possible formats from different API backends
                 result = extractTextFromResponse(response);
@@ -2137,10 +2374,9 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
 
             // Safety: ensure result is a string before string operations
             if (typeof result !== 'string') {
-                console.error('[EchoChamber] result is not a string after extraction! Type:', typeof result, 'Value:', result);
+                error('result is not a string after extraction! Type:', typeof result, 'Value:', result);
                 result = extractTextFromResponse(result) || String(result);
             }
-            console.error('[EchoChamber DEBUG] Final result (first 200 chars):', result?.substring?.(0, 200));
 
             // Parse result - strip thinking/reasoning tags and discordchat wrapper
             let cleanResult = result
@@ -2152,6 +2388,9 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
             let messageCount = 0;
             let currentMsg = null;
             let parsedMessages = [];
+
+            // Build known character list once for post-processing name snapping
+            const knownCharsForSnap = getKnownCharactersForSnap();
 
             for (const line of lines) {
                 const trimmedLine = line.trim();
@@ -2168,19 +2407,33 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
                     let name = match[1].trim().replace(/[\*_\"`]/g, '');
                     // Limit displayed name to reasonable length
                     if (name.length > 40) name = name.substring(0, 40);
+                    // Snap to canonical character name; null means unknown — skip the message
+                    if (knownCharsForSnap) {
+                        name = snapToKnownCharacters(name, knownCharsForSnap);
+                        if (!name) continue;
+                    }
                     let content = match[2].trim();
                     currentMsg = { name, content };
                     parsedMessages.push(currentMsg);
                 } else if (currentMsg) {
                     currentMsg.content += ' ' + trimmedLine;
                 } else {
-                    // Last resort: use entire line as content with generic name
-                    currentMsg = { name: 'User', content: trimmedLine };
-                    parsedMessages.push(currentMsg);
+                    // Last resort: use entire line as content with generic name.
+                    // Skip in SillyTavern styles — malformed lines with no known speaker
+                    // must not slip through the character filter as a generic 'User' entry.
+                    if (!knownCharsForSnap) {
+                        currentMsg = { name: 'User', content: trimmedLine };
+                        parsedMessages.push(currentMsg);
+                    }
                 }
             }
 
-            for (const msg of parsedMessages) {
+            // Reverse order for newest-first display
+            const orderedMessages = settings.messageOrder === 'newest-first'
+                ? [...parsedMessages].reverse()
+                : parsedMessages;
+
+            for (const msg of orderedMessages) {
                 if (messageCount >= userCount) break;
                 if (msg.content.trim().length < 2) continue;
                 htmlBuffer += formatMessage(msg.name, msg.content.trim());
@@ -2265,11 +2518,15 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
 
     let promptCache = {};
     const STYLE_FILES = {
+        'sillytavern': 'sillytavern.md',
+        'sillytavern_story': 'sillytavern_story.md',
         'twitch': 'discordtwitch.md', 'verbose': 'thoughtfulverbose.md', 'twitter': 'twitterx.md', 'news': 'breakingnews.md',
         'mst3k': 'mst3k.md', 'nsfw_ava': 'nsfwava.md', 'nsfw_kai': 'nsfwkai.md', 'hypebot': 'hypebot.md',
         'doomscrollers': 'doomscrollers.md', 'darkroast': 'darkroast.md', 'dumbanddumber': 'dumbanddumber.md', 'ao3wattpad': 'ao3wattpad.md'
     };
     const BUILT_IN_STYLES = [
+        { val: 'sillytavern', label: 'SillyTavern (Roleplay)' },
+        { val: 'sillytavern_story', label: 'SillyTavern (Story)' },
         { val: 'twitch', label: 'Discord / Twitch' }, { val: 'verbose', label: 'Thoughtful' },
         { val: 'twitter', label: 'Twitter / X' }, { val: 'news', label: 'Breaking News' },
         { val: 'mst3k', label: 'MST3K' }, { val: 'nsfw_ava', label: 'Ava NSFW' },
@@ -2279,8 +2536,9 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
         { val: 'ao3wattpad', label: 'AO3 / Wattpad' }
     ];
 
-    // Default order: built-ins with nsfw_ava and nsfw_kai moved to the bottom (just above custom styles)
+    // Default order: SillyTavern styles first, then generic styles; nsfw at the bottom
     const DEFAULT_STYLE_ORDER = [
+        'sillytavern', 'sillytavern_story',
         'twitch', 'verbose', 'twitter', 'news', 'mst3k',
         'hypebot', 'doomscrollers', 'darkroast', 'dumbanddumber', 'ao3wattpad',
         'nsfw_ava', 'nsfw_kai'
@@ -2318,6 +2576,19 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
             }
         }
 
+        // Ensure 'sillytavern' is always at position 0 and 'sillytavern_story' at position 1,
+        // even for users with a pre-existing saved style_order that pre-dates these styles.
+        const stIdx = result.findIndex(s => s.val === 'sillytavern');
+        if (stIdx > 0) {
+            const [st] = result.splice(stIdx, 1);
+            result.unshift(st);
+        }
+        const stStoryIdx = result.findIndex(s => s.val === 'sillytavern_story');
+        if (stStoryIdx !== -1 && stStoryIdx !== 1) {
+            const [stStory] = result.splice(stStoryIdx, 1);
+            result.splice(1, 0, stStory);
+        }
+
         return result;
     }
 
@@ -2343,9 +2614,31 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
             const ctx = SillyTavern.getContext();
             const userName = ctx.name1 || 'User';
             const charName = ctx.characterName || ctx.name2 || 'Character';
+            // {{characters}} resolves to a bullet-list of all active character names (one per line).
+            // Used by the SillyTavern style to inject actual character names into the prompt.
+            const characterList = (() => {
+                const chars = getActiveCharacters();
+                if (chars.length > 0) return chars.map(c => `- ${c.name}`).join('\n');
+                return `- ${charName}`;
+            })();
+            // {{story_characters_block}} — for the SillyTavern (Story) style.
+            // In a group chat: same named-character constraint as the Roleplay style.
+            // In a single-character chat: the card name is the story/world title, NOT a character,
+            // so we instruct the AI to infer cast names from the story content instead.
+            const storyCharactersBlock = (() => {
+                const chars = getActiveCharacters();
+                if (ctx.groupId && chars.length > 0) {
+                    const nameList = chars.map(c => `- ${c.name}`).join('\n');
+                    return `<characters>\nThe ONLY chatters in this feed are the characters listed below. You MUST use each name EXACTLY as written — full surname included. Do NOT change, shorten, alter, or invent any part of any name. Do NOT add new characters not on this list:\n${nameList}\n</characters>`;
+                }
+                // Single-character chat: card name is the story title, not a speaking character
+                return `<characters>\nIdentify the speaking characters from the story content itself — do NOT use "${charName}" as a username, as that is the story or world name, not a character. Use the names of characters who actually appear and speak within the narrative. Each character should speak with the voice and personality they demonstrate in the story.\n</characters>`;
+            })();
             return text
                 .replace(/\{\{user\}\}/gi, userName)
-                .replace(/\{\{char\}\}/gi, charName);
+                .replace(/\{\{char\}\}/gi, charName)
+                .replace(/\{\{characters\}\}/gi, characterList)
+                .replace(/\{\{story_characters_block\}\}/gi, storyCharactersBlock);
         } catch (e) {
             return text;
         }
@@ -2436,6 +2729,7 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
 
         // Livestream settings
         jQuery('#discord_livestream').prop('checked', settings.livestream || false);
+        jQuery('#discord_livestream_auto_scroll').prop('checked', settings.livestreamAutoScroll !== false);
         jQuery('#discord_livestream_batch_size').val(settings.livestreamBatchSize || 20);
         jQuery('#discord_livestream_min_wait').val(settings.livestreamMinWait || 5);
         jQuery('#discord_livestream_max_wait').val(settings.livestreamMaxWait || 60);
@@ -2461,6 +2755,9 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
         jQuery('#discord_chat_reply_count').val(settings.chatReplyCount || 3);
         jQuery('.ec_reply_container').toggle(settings.chatEnabled !== false);
         applyAvatarColor(settings.chatAvatarColor || '#3b82f6');
+
+        // Message order
+        jQuery('#discord_message_order').val(settings.messageOrder || 'oldest-first');
 
         applyFontSize(settings.fontSize || 15);
         updateSourceVisibility();
@@ -2516,8 +2813,9 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
 
             if (connectionManager?.profiles?.length) {
                 connectionManager.profiles.forEach(profile => {
-                    const isSelected = settings.preset === profile.name ? ' selected' : '';
-                    select.append(`<option value="${profile.name}"${isSelected}>${profile.name}</option>`);
+                    // Use profile ID as the option value; match existing saved settings that stored the name
+                    const isSelected = (settings.preset === profile.id || settings.preset === profile.name) ? ' selected' : '';
+                    select.append(`<option value="${profile.id}"${isSelected}>${profile.name}</option>`);
                 });
                 log(`Loaded ${connectionManager.profiles.length} connection profiles`);
             } else {
@@ -2770,6 +3068,7 @@ STRICTLY follow the format defined in the instruction. ${isNarratorStyle && sett
                 <span><i class="fa-solid fa-code" style="margin-right:4px;"></i><b>Macros:</b></span>
                 <span><code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">{{user}}</code> → <em>${previewUser}</em></span>
                 <span><code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">{{char}}</code> → <em>${previewChar}</em></span>
+                <span><code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px;">{{characters}}</code> → <em>all active character names</em></span>
             </div>
         `);
 
@@ -3447,6 +3746,13 @@ username: message
               <label class="ecm_label" for="ecm_opacity">Opacity <span id="ecm_opacity_val">${s.opacity || 85}%</span></label>
               <input id="ecm_opacity" type="range" class="ecm_slider" min="10" max="100" step="5" value="${s.opacity || 85}">
             </div>
+            <div class="ecm_row">
+              <label class="ecm_label" for="ecm_message_order"><i class="fa-solid fa-arrow-down-up-across-line ecm_icon"></i> Message Order</label>
+              <select id="ecm_message_order" class="ecm_select">
+                <option value="oldest-first"${(s.messageOrder || 'oldest-first') === 'oldest-first' ? ' selected' : ''}>Oldest at top, newest at bottom</option>
+                <option value="newest-first"${s.messageOrder === 'newest-first' ? ' selected' : ''}>Newest at top, oldest at bottom</option>
+              </select>
+            </div>
           </div>
         </section>
 
@@ -3515,6 +3821,10 @@ username: message
               <input id="ecm_livestream" type="checkbox" class="ecm_toggle"${s.livestream ? ' checked' : ''}>
             </label>
             <div id="ecm_livestream_settings" style="${livestreamVisible}">
+              <label class="ecm_row ecm_toggle_row" for="ecm_livestream_auto_scroll">
+                <span class="ecm_label"><i class="fa-solid fa-angles-down ecm_icon"></i> Auto-scroll to Latest Message</span>
+                <input id="ecm_livestream_auto_scroll" type="checkbox" class="ecm_toggle"${s.livestreamAutoScroll !== false ? ' checked' : ''}>
+              </label>
               <div class="ecm_row">
                 <label class="ecm_label" for="ecm_livestream_batch_size"><i class="fa-solid fa-boxes-stacked ecm_icon"></i> Batch Size</label>
                 <input id="ecm_livestream_batch_size" type="number" class="ecm_input ecm_input_sm" min="5" max="50" value="${s.livestreamBatchSize || 20}">
@@ -3839,6 +4149,12 @@ username: message
             modal.find('#ecm_opacity_val').text(settings.opacity + '%');
             jQuery('#discord_opacity').val(settings.opacity).trigger('input');
         });
+        modal.on('change', '#ecm_message_order', function () {
+            settings.messageOrder = jQuery(this).val();
+            saveSettings();
+            applyMessageOrder();
+            jQuery('#discord_message_order').val(settings.messageOrder);
+        });
 
         // Content Settings
         modal.on('change', '#ecm_auto_update', function () { syncToPanel('discord_auto_update', this.checked, true); });
@@ -3874,6 +4190,11 @@ username: message
             settings.livestreamMode = val;
             saveSettings();
             jQuery(`#discord_livestream_${val === 'manual' ? 'manual' : val === 'onMessage' ? 'onmessage' : 'oncomplete'} `).prop('checked', true);
+        });
+        modal.on('change', '#ecm_livestream_auto_scroll', function () {
+            settings.livestreamAutoScroll = this.checked;
+            jQuery('#discord_livestream_auto_scroll').prop('checked', this.checked);
+            saveSettings();
         });
 
         // Chat Participation
@@ -3950,6 +4271,7 @@ username: message
         modal.find('#ecm_wi_budget_container').toggle(!!s.includeWorldInfo);
         modal.find('#ecm_livestream').prop('checked', s.livestream);
         modal.find('#ecm_livestream_settings').toggle(!!s.livestream);
+        modal.find('#ecm_livestream_auto_scroll').prop('checked', s.livestreamAutoScroll !== false);
         modal.find('#ecm_livestream_batch_size').val(s.livestreamBatchSize);
         modal.find('#ecm_livestream_min_wait').val(s.livestreamMinWait);
         modal.find('#ecm_livestream_max_wait').val(s.livestreamMaxWait);
@@ -3962,6 +4284,7 @@ username: message
         modal.find('#ecm_ollama_settings').toggle(s.source === 'ollama');
         modal.find('#ecm_openai_settings').toggle(s.source === 'openai');
         modal.find('#ecm_profile_settings').toggle(s.source === 'profile');
+        modal.find('#ecm_message_order').val(s.messageOrder || 'oldest-first');
     }
 
     // ============================================================
@@ -4553,13 +4876,18 @@ username: message
             const myMsg = formatMessage(settings.chatUsername || 'Streamer (You)', text, true);
             const container = jQuery('#discordContent .discord_container');
             if (container.length) {
-                container.prepend(myMsg);
+                if (settings.messageOrder === 'newest-first') container.prepend(myMsg);
+                else container.append(myMsg);
             } else {
                 jQuery('#discordContent').html(`<div class="discord_container" > ${myMsg}</div> `);
             }
 
-            // Scroll to top so the user sees their message and the incoming reply
-            jQuery('#discordContent').scrollTop(0);
+            // Scroll to show the user's message and incoming reply
+            const dcSubmit = document.getElementById('discordContent');
+            if (dcSubmit) {
+                if (settings.messageOrder === 'newest-first') dcSubmit.scrollTo({ top: 0, behavior: 'smooth' });
+                else dcSubmit.scrollTo({ top: dcSubmit.scrollHeight, behavior: 'smooth' });
+            }
 
             // Parse @username mention if present, then generate a targeted single reply
             const atMatch = text.match(/^@([^\s]+)/);
@@ -5027,6 +5355,13 @@ username: message
             syncModalFromSettings();
         });
 
+        jQuery('#discord_message_order').on('change', function () {
+            settings.messageOrder = jQuery(this).val();
+            saveSettings();
+            applyMessageOrder();
+            syncModalFromSettings();
+        });
+
         // Connection Profile selection
         jQuery('#discord_preset_select').on('change', function () {
             settings.preset = jQuery(this).val();
@@ -5182,6 +5517,13 @@ username: message
             log('Livestream mode:', settings.livestreamMode);
         });
 
+
+        // Livestream auto-scroll
+        jQuery('#discord_livestream_auto_scroll').on('change', function () {
+            settings.livestreamAutoScroll = jQuery(this).prop('checked');
+            saveSettings();
+            log('Livestream auto-scroll:', settings.livestreamAutoScroll);
+        });
         // Style Editor button
         jQuery(document).on('click', '#discord_open_style_editor', function () {
             openStyleEditor();
@@ -5254,14 +5596,19 @@ username: message
                 // Don't auto-generate if we're currently loading/switching chats
                 if (isLoadingChat) return;
 
+                // Skip panel-visibility guards when nav panels are pinned open — pinned panels
+                // remain rendered by design and should not suppress generation during an active chat.
+                const rightNavPinned = document.querySelector('#right-nav-panel')?.classList.contains('pinnedOpen') ?? false;
+                const leftNavPinned  = document.querySelector('#left-nav-panel')?.classList.contains('pinnedOpen')  ?? false;
+
                 // Don't auto-generate if character editor is open (editing character cards)
                 const characterEditor = document.querySelector('#character_popup');
-                const isCharacterEditorOpen = characterEditor && characterEditor.style.display !== 'none' && characterEditor.offsetParent !== null;
+                const isCharacterEditorOpen = !leftNavPinned && characterEditor && characterEditor.style.display !== 'none' && characterEditor.offsetParent !== null;
                 if (isCharacterEditorOpen) return;
 
                 // Don't auto-generate if we're in the character creation/management area
                 const charCreatePanel = document.querySelector('#rm_ch_create_block');
-                const isCreatingCharacter = charCreatePanel && charCreatePanel.style.display !== 'none' && charCreatePanel.offsetParent !== null;
+                const isCreatingCharacter = !rightNavPinned && charCreatePanel && charCreatePanel.style.display !== 'none' && charCreatePanel.offsetParent !== null;
                 if (isCreatingCharacter) return;
 
                 // Don't auto-generate if there's no valid chatId (indicates we're not in an actual conversation)
@@ -5390,6 +5737,11 @@ username: message
         // Restore cached commentary if there's an active chat
         if (context.chatId) {
             restoreCachedCommentary();
+        }
+
+        // Restore floating panel if it was open when the page was last closed
+        if (settings.floatOpen && !window.matchMedia('(max-width: 768px)').matches) {
+            openPopoutWindow();
         }
 
         log('Initialization complete');

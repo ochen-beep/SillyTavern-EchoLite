@@ -135,6 +135,19 @@
                             </div>
                         </div>
 
+                        <!-- Message Order -->
+                        <div class="ec-s-grid-2">
+                            <div class="ec-s-field-group">
+                                <label class="ec-s-field-label" for="discord_message_order">
+                                    <i class="fa-solid fa-arrow-down-up-across-line"></i> Message Order
+                                </label>
+                                <select id="discord_message_order" class="text_pole ec-s-select">
+                                    <option value="oldest-first">Oldest at top, newest at bottom</option>
+                                    <option value="newest-first">Newest at top, oldest at bottom</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <!-- Users + Font + Opacity -->
                         <div class="ec-s-grid-3">
                             <div class="ec-s-field-group">
@@ -292,6 +305,16 @@
 
                         <!-- Livestream Settings (shown when enabled) -->
                         <div id="discord_livestream_settings" class="ec-s-sub-field" hidden>
+
+                            <label class="ec-s-toggle-row" for="discord_livestream_auto_scroll">
+                                <input id="discord_livestream_auto_scroll" type="checkbox" class="checkbox" checked>
+                                <span class="ec-s-label-text">
+                                    <i class="fa-solid fa-angles-down"></i> Auto-scroll to Latest Message
+                                </span>
+                            </label>
+                            <div class="ec-s-hint ec-s-hint--indent">
+                                Automatically scroll to the newest message as it appears
+                            </div>
 
                             <div class="ec-s-grid-2">
                                 <div class="ec-s-field-group">

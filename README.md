@@ -5,6 +5,14 @@
 
 ## 🆕 What's New
 
+### ***v5.2.0***
+* New Feature: Two new 'SillyTavern' styles, which uses characters from your SillyTavern roleplay/story in EchoChamber. One is for roleplay, the other for story. Roleplay includes the character's name in the character card in the EchoChamber chat, while Story does not.
+* Setting: Display > Message Order -- Change the direction of replies - newest at the bottom, oldest at the top OR oldest at the bottom, newest at the top. This setting is obeyed for both Livestream and Chat Participation when enabled
+* Setting: Livestream > Auto-Scroll to Latest Message - automatically scrolls to the latest message based on your Message Order setting
+* Bug Fix: Generation not working when SillyTavern's panels are pinned (AI Response Configuration & Character Management)
+* Bug Fix: Raw API JSON leaks when using text completion backends which caused inconsistent/wrong generation output
+* Bug Fix: Floating/Pop-Out panel not being restored to its original state on reload of SillyTavern
+
 ### ***v5.0.0***
 * Chat Participation: You can now send messages and chat with others. Supports @mentions and comments in general. Set your username, choose an avatar color, and how many respond to you. Thanks to RetiredHippie for getting this feature started.
 * Live icon is now clickable, allowing you to quickly enable/disable Livestream. It turns orange and pulses to indicate it is processing in the background, then turns red when done and remains Live.
@@ -21,17 +29,6 @@ Bugs/Issues Fixed:
  * World Info setting token count too low, now set to 0 to use ST's max context and you can set it to any amount manually
  * EchoChamber erroneously triggering and processing when a very slow or unresponsive LLM is used
  * Style Manager not parsing and understanding {{user}} and {{char}}
-
-### ***v4.2.1***
-- **General fixes**: Stopped generation on style change, fixed the limited chat history (it was getting trimmed)
-- **Proper structure:** Fixed the structure of generation calls
-
-### ***v4.2.0***
-- **Pop-out window**: Open the chat in a separate window to move to another screen
-- **Improved panel controls**: Power button now truly enables/disables the extension (hides panel AND stops generation). Separate collapse arrow for just hiding the panel
-- **Include: Summary, World Info, Persona/Character**: Option to include more context to EchoChamber (thanks to leDissolution!)
-- **Style dropdown fix**: Menu now opens upward when panel is at bottom position
-- **Livestream resume**: Messages continue rolling after page refresh
 
 ![Version](https://img.shields.io/badge/SillyTavern-v1.12%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -50,7 +47,7 @@ Bugs/Issues Fixed:
 
 | Feature | Description |
 |---------|-------------|
-| 🎭 **11+ Chat Styles** | Discord/Twitch, Twitter/X, Breaking News, MST3K, AO3/Wattpad, Dark Roast, Doomscrollers, and more |
+| 🎭 **13+ Chat Styles** | Discord/Twitch, Twitter/X, Breaking News, MST3K, AO3/Wattpad, Dark Roast, Doomscrollers, and more |
 | 🔌 **Flexible Backends** | Use your existing SillyTavern connection, or connect to Ollama, KoboldCPP, LM Studio, vLLM |
 | 📍 **5 Panel Positions** | Place the feed at the Bottom, Top, Left, or Right of your chat or choose a pop-out floating panel |
 | 💬 **Chat Participation** | Chat with commenters with @mention support |
@@ -184,6 +181,7 @@ Access EchoChamber settings from the Extensions panel:
 
 | Engine | Description |
 |--------|-------------|
+| **Main (API)** | Uses the connection set in SillyTavern |
 | **Connection Profile** ⭐ | Use your existing SillyTavern connection profiles (Recommended) |
 | **Ollama** | Connect directly to local Ollama instance |
 | **OpenAI Compatible** | Works with KoboldCPP, LM Studio, vLLM, TabbyAPI, etc. |

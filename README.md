@@ -1,5 +1,7 @@
-# EchoLite (основная ветка теперь BETAjail, обновитесь, если еще не :)) )
+# EchoLite 
 **EchoLite** — облегчённый форк [EchoChamber](https://github.com/mattjaybe/SillyTavern-EchoChamber) для SillyTavern.
+
+(основная ветка теперь BETAjail, обновитесь, если еще не :)) )
 
 Расширение генерирует отдельную фейковую чат-ленту в стиле Discord, которая реагирует на текущую сцену в чате. 
 
